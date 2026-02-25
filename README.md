@@ -1,108 +1,116 @@
 # Consumer-Intelligence-Protocol-Automotive (AutoCIP)
 
-**A vehicle shopping assistant MCP server built on [CIP](https://github.com/Cole-Cant-Code/CIP-Customer-Intelligence-Protocol).**
+AutoCIP is an MCP server that helps people shop for cars and helps dealers run better operations.
 
-AutoCIP connects an LLM to a live vehicle inventory so it can search, compare, and reason about real cars — complete with guardrails that prevent it from making purchase decisions, guaranteeing financing terms, or giving legal advice.
+Built on [CIP](https://github.com/Cole-Cant-Code/CIP-Customer-Intelligence-Protocol), it connects an LLM to live inventory, lead activity, and dealer analytics so conversations can move from "just browsing" to real outcomes.
 
-```
-User:  "What SUVs are near Austin under $40k?"
-AutoCIP → searches inventory → CIP scaffold → guardrail-checked response
-```
+## Why this exists
+Most car tools do one of these well:
+- help buyers browse
+- help dealers manage inventory
+- help sales teams track outcomes
 
-## What it does
+AutoCIP combines all three in one flow.
 
-| Tool | Description |
-|------|-------------|
-| `search_vehicles` | Filter by make, model, year, price, body type, fuel type |
-| `get_vehicle_details` | Full specs for a vehicle by ID |
-| `compare_vehicles` | Side-by-side comparison of 2-3 vehicles |
-| `estimate_financing` | Monthly payment estimates (with disclaimers) |
-| `estimate_trade_in` | Trade-in value based on year, make, model, mileage, condition |
-| `check_availability` | Stock status + dealer info |
-| `schedule_test_drive` | Request a test drive appointment |
-| `assess_purchase_readiness` | Evaluate readiness based on budget, financing, insurance |
-| `upsert_vehicle` | Add or update a single vehicle in inventory |
-| `bulk_upsert_vehicles` | Batch add/update vehicles |
-| `remove_vehicle` | Remove a vehicle by ID |
+## What this feels like in real life
 
-The first 8 tools go through CIP's reasoning framework (scaffold selection, data context injection, guardrail enforcement). The last 3 are pure CRUD for inventory ingestion.
+### If you're a shopper
+You can ask things like:
+- "Show me SUVs under $40k near 78701."
+- "What’s similar to this vehicle but cheaper?"
+- "What would this cost me monthly with different down payments?"
+- "What’s the out-the-door price with taxes and fees?"
+- "Can I reserve this one or message the dealer first?"
 
-## Architecture
+### If you're a dealer
+You can do things like:
+- import and manage inventory
+- see which leads are hottest right now
+- inspect one lead’s timeline and intent score
+- spot stale/overpriced units before they rot on lot
+- record closed sales and measure full funnel conversion
 
-```
-MCP Client (Claude, etc.)
-    │
-    ▼
-┌─────────────────────────────────┐
-│  server.py  (FastMCP, 11 tools) │
-└──────┬──────────────────────────┘
-       │
-  ┌────┴────┐
-  │         │
-  ▼         ▼
-tools/    data/
-  │         │
-  │    ┌────┴────┐
-  │    │         │
-  │  inventory   store.py
-  │  .py (facade) (SQLite + WAL)
-  │    │         │
-  │    └────┬────┘
-  │         │
-  ▼         ▼
-CIP Protocol    seed.py
-(scaffolds +    (32 demo vehicles)
- guardrails)
-```
+## Core capabilities (human version)
 
-**Key design choices:**
+### Buyer journey
+- Discovery: search, location search, VIN lookup, similar vehicles, saved searches, favorites
+- Evaluation: detailed specs, comparison, vehicle history summary, market price context, ownership cost
+- Financial: financing estimate, financing scenario comparison, insurance estimate, out-the-door estimate, trade-in estimate
+- Conversion: availability checks, dealer messaging, vehicle holds, test-drive requests, deposit capture
+- Post-purchase: service request, warranty overview, follow-up requests
 
-- **SQLite with WAL mode** — concurrent reads during writes, no external DB server needed
-- **`VehicleStore` protocol** — swap SQLite for Postgres (or anything) without changing tool code
-- **Facade pattern** in `inventory.py` — all existing tools import from here; the switch from hardcoded list to SQLite required zero changes in any tool file
-- **UPSERT semantics** — dealers can push the same vehicle repeatedly without duplicates
-- **Auto-seeding** — empty DB gets populated with 32 demo vehicles on first access
+### Dealer intelligence
+- Lead profiles with identity stitching and scoring
+- Hot lead ranking and per-lead timeline details
+- Inventory aging + velocity reports
+- Pricing opportunity recommendations (reprice / promote / hold)
+- Sale recording + closed-loop funnel analytics (discovery -> outcome)
 
-## Guardrails
+### Inventory operations
+- single and bulk upsert
+- API ingestion via Auto.dev
+- stale listing expiration
+- inventory and lead aggregate analytics
 
-CIP enforces domain-specific safety constraints:
+## Example prompts
 
-- **No purchase pressure** — blocks "you should definitely buy" language
-- **No financial guarantees** — catches APR promises, approval guarantees
-- **No legal advice** — prevents unauthorized legal guidance
-- **No mechanical diagnosis** — stops engine life guarantees
-- **Regex policies** — catches patterns like "your APR will be 4.5%"
+### Shopper prompts
+- "Compare these three vehicles and include the tradeoffs."
+- "Estimate 48 vs 72 month financing with $5k and $10k down."
+- "Is this listing above or below market?"
 
-Flagged content gets redacted before reaching the user.
+### Dealer prompts
+- "Show my top 10 hot leads in the last 14 days."
+- "Which units are 45+ days on lot with low lead velocity?"
+- "What are my funnel conversion rates this month by source channel?"
+
+## Safety and guardrails
+AutoCIP is designed to be useful without pretending to be a lawyer, lender, or mechanic.
+
+It blocks or redacts unsafe patterns like:
+- purchase pressure ("you should definitely buy this")
+- guaranteed financing outcomes
+- legal advice
+- mechanical guarantees
+
+Financial and risk outputs are presented as estimates, not promises.
 
 ## Quick start
 
 ```bash
 # Clone
+
 git clone https://github.com/Cole-Cant-Code/Consumer-Intelligence-Protocol-Automotive.git
 cd Consumer-Intelligence-Protocol-Automotive
 
-# Install (requires Python 3.11+)
+# Install (Python 3.11+)
 uv sync --all-extras
 
 # Run tests
 uv run pytest tests/ -v
 
-# Start the MCP server
+# Start MCP server
 export ANTHROPIC_API_KEY="sk-ant-..."
 uv run mcp run auto_mcp/server.py
 ```
 
-### Connect to Claude Desktop
+## Connect to Claude Desktop
 
-Add to your Claude Desktop MCP config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "autocip": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/Consumer-Intelligence-Protocol-Automotive", "mcp", "run", "auto_mcp/server.py"],
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/Consumer-Intelligence-Protocol-Automotive",
+        "mcp",
+        "run",
+        "auto_mcp/server.py"
+      ],
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
@@ -111,77 +119,69 @@ Add to your Claude Desktop MCP config (`~/Library/Application Support/Claude/cla
 }
 ```
 
-### Live inventory ingestion
-
-Push vehicles from a dealer feed, script, or another MCP client:
+## Dealer workflow snippet
 
 ```python
-# Single vehicle
-upsert_vehicle(vehicle={
-    "id": "DEALER-001",
-    "year": 2025,
-    "make": "Rivian",
-    "model": "R1S",
-    "trim": "Adventure",
-    "body_type": "suv",
-    "price": 78000,
-    "dealer_location": "Austin, TX",
-    # ... all 22 fields
-})
+# 1) Track lead behavior
+record_lead(vehicle_id="VH-001", action="viewed", customer_id="cust-123")
+record_lead(vehicle_id="VH-001", action="availability_check", customer_id="cust-123")
 
-# Batch
-bulk_upsert_vehicles(vehicles=[...])
+# 2) Prioritize follow-up
+get_hot_leads(limit=10)
 
-# Remove sold vehicles
-remove_vehicle(vehicle_id="DEALER-001")
+# 3) Close the loop when sold
+record_sale(
+    vehicle_id="VH-001",
+    sold_price=28995,
+    sold_at="2026-02-25T18:30:00+00:00",
+    source_channel="organic"
+)
+
+# 4) Measure conversion
+await get_funnel_metrics(days=30, breakdown_by="source_channel")
 ```
 
-The DB path defaults to `auto_mcp/data/inventory.db`. Override with `AUTOCIP_DB_PATH` env var.
+## Under the hood (quick)
+- FastMCP server with 40+ tools
+- CIP scaffolds for structured reasoning + response guardrails
+- SQLite (WAL mode) for inventory, lead profiles/events, and sales outcomes
+- VehicleStore protocol so storage can be swapped later without rewriting tool logic
+
+## Project structure
+
+```text
+auto_mcp/
+├── server.py                  # MCP tool registration + wrappers
+├── config.py                  # Domain config + guardrails
+├── data/
+│   ├── inventory.py           # Public data facade
+│   ├── store.py               # SQLite schema + analytics logic
+│   └── seed.py                # Demo vehicles
+├── tools/
+│   ├── search/details/...     # Buyer-facing tools
+│   ├── dealer_intelligence.py # Hot leads, aging, pricing, funnel metrics
+│   ├── sales.py               # record_sale
+│   └── ingestion.py           # CRUD + import
+└── scaffolds/                 # Reasoning scaffolds per tool family
+```
 
 ## Development
 
 ```bash
 # Lint
-uv run ruff check auto_mcp/ tests/
+uv run ruff check auto_mcp tests
 
-# Test with coverage
-uv run pytest tests/ -v --cov=auto_mcp
-
-# Test count: 86 (56 original + 30 new for store/ingestion)
-```
-
-## Project structure
-
-```
-auto_mcp/
-├── server.py              # FastMCP server — 11 tool registrations
-├── config.py              # CIP domain config + guardrails
-├── data/
-│   ├── inventory.py       # Thin facade (get_vehicle, search_vehicles)
-│   ├── store.py           # VehicleStore protocol + SqliteVehicleStore
-│   └── seed.py            # 32 demo vehicles + seed_demo_data()
-├── tools/
-│   ├── search.py          # Search with CIP reasoning
-│   ├── details.py         # Vehicle details with CIP reasoning
-│   ├── compare.py         # Side-by-side comparison
-│   ├── availability.py    # Stock check + dealer info
-│   ├── financing.py       # Payment + trade-in estimates
-│   ├── scheduling.py      # Test drive + purchase readiness
-│   └── ingestion.py       # CRUD: upsert, bulk_upsert, remove
-└── scaffolds/             # 9 YAML reasoning frameworks
-    ├── vehicle_search.yaml
-    ├── vehicle_details.yaml
-    └── ...
+# Tests
+uv run pytest tests -q
 ```
 
 ## License
+AutoCIP is licensed under Business Source License 1.1.
 
-AutoCIP is licensed under the Business Source License 1.1. See
-[`LICENSE`](LICENSE).
+See:
+- [LICENSE](LICENSE)
+- [LICENSE-APACHE](LICENSE-APACHE)
+- [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)
+- [TRADEMARKS.md](TRADEMARKS.md)
 
-Additional licensing docs:
-
-- Apache 2.0 reference text: [`LICENSE-APACHE`](LICENSE-APACHE)
-- Commercial licensing information: [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md)
-- Trademark policy: [`TRADEMARKS.md`](TRADEMARKS.md)
-- Licensing contact: `licensing@manticthink.com`
+Licensing contact: `licensing@manticthink.com`
