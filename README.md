@@ -5,7 +5,7 @@ Scaffold-driven MCP server that turns car conversations into real outcomes — f
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL--1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blueviolet.svg)](https://modelcontextprotocol.io)
-[![Tests: 252](https://img.shields.io/badge/tests-252-brightgreen.svg)](tests/)
+[![Tests: 281](https://img.shields.io/badge/tests-281-brightgreen.svg)](tests/)
 
 ```
 You:     "Compare the Camry and Accord, then show me financing at 48 vs 72 months with $5k down."
@@ -27,7 +27,7 @@ AutoCIP separates **what the AI knows** from **how it thinks about it**.
 
 Every tool call is routed through a **scaffold** — a YAML reasoning framework that tells a specialist LLM how to approach a specific task. A comparison scaffold structures trade-off analysis. A financing scaffold enforces estimate framing and blocks guarantee language. A dealer lead scaffold prioritizes by intent score and recency.
 
-The result: 43 tools, 31 reasoning frameworks, and a guardrail system that runs *after* generation — not just in the prompt.
+The result: 45 tools, 32 reasoning frameworks, and a guardrail system that runs *after* generation — not just in the prompt.
 
 ---
 
@@ -56,7 +56,7 @@ The result: 43 tools, 31 reasoning frameworks, and a guardrail system that runs 
 │                                              │
 │  ┌────────────┬────────────┬──────────────┐  │
 │  │  SQLite    │ Scaffolds  │  Guardrails  │  │
-│  │  vehicles  │ 31 YAML    │  prohibited  │  │
+│  │  vehicles  │ 32 YAML    │  prohibited  │  │
 │  │  leads     │ reasoning  │  phrases,    │  │
 │  │  sales     │ frameworks │  regex,      │  │
 │  │  profiles  │            │  redaction   │  │
@@ -70,7 +70,7 @@ The result: 43 tools, 31 reasoning frameworks, and a guardrail system that runs 
 
 ## Tools
 
-43 MCP tools across 7 categories. Every CIP-routed tool accepts `raw=True` to bypass the specialist and get structured JSON directly.
+45 MCP tools across 8 categories. Every CIP-routed tool accepts `raw=True` to bypass the specialist and get structured JSON directly.
 
 ### Shopper tools
 
@@ -121,6 +121,13 @@ The result: 43 tools, 31 reasoning frameworks, and a guardrail system that runs 
 | `get_funnel_metrics` | Closed-loop conversion from view through sale, with optional source/channel breakdown |
 | `get_inventory_stats` | Aggregate inventory coverage, pricing, freshness |
 | `record_sale` | Record a completed sale and link to lead — closes the funnel loop |
+
+### Escalation tools
+
+| Tool | What it does |
+|------|-------------|
+| `get_escalations` | Pending lead escalation alerts — threshold crossings detected in real time |
+| `acknowledge_escalation` | Mark an escalation as delivered/acknowledged |
 
 ### Data management tools
 
@@ -180,10 +187,10 @@ guardrails:
 
 The `reasoning_framework` enforces structure. The `output_calibration` controls what appears. The `guardrails` catch violations after generation.
 
-31 scaffolds covering search, comparison, financing, market pricing, lead analysis, inventory aging, funnel metrics, and more — including dealer-specific variants that shift tone and detail level for professional use.
+32 scaffolds covering search, comparison, financing, market pricing, lead analysis, inventory aging, funnel metrics, escalation alerts, and more — including dealer-specific variants that shift tone and detail level for professional use.
 
 <details>
-<summary>All 31 scaffolds</summary>
+<summary>All 32 scaffolds</summary>
 
 | Scaffold | Purpose |
 |----------|---------|
@@ -198,6 +205,7 @@ The `reasoning_framework` enforces structure. The `output_calibration` controls 
 | `inventory_stats` | Aggregate inventory metrics |
 | `lead_analytics` | Engagement analytics reporting |
 | `lead_detail` | Individual lead deep-dive |
+| `lead_escalation` | Real-time threshold crossing alerts for sales teams |
 | `lead_hotlist` | Hot lead prioritization |
 | `location_search` | Geo-search result framing |
 | `market_price_context` | Market positioning for shoppers |
@@ -274,6 +282,8 @@ Engagement events are weighted to produce an intent score per lead:
 
 Leads are stitched across sessions via `lead_id`, `customer_id`, and `session_id`. The funnel tracks five stages: **discovery** → **consideration** → **financial** → **intent** → **outcome**.
 
+When a lead's cumulative score crosses a threshold (cold → warm at 10, warm → hot at 22), an **escalation** is generated synchronously inside `record_lead()` — no polling, no background threads. Escalations are stored, deduplicated, and surfaced through `get_escalations` so dealers get alerted the moment a lead heats up.
+
 ---
 
 ## Quick start
@@ -286,7 +296,7 @@ cd Consumer-Intelligence-Protocol-Automotive
 uv sync --all-extras
 
 # Run tests
-uv run pytest tests/ -v    # 252 tests
+uv run pytest tests/ -v    # 281 tests
 
 # Start the server
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -356,14 +366,14 @@ claude mcp add-json autocip '{
 
 ```
 auto_mcp/
-├── server.py              # FastMCP entry point — 43 tools, provider pool, orchestration wiring
+├── server.py              # FastMCP entry point — 45 tools, provider pool, orchestration wiring
 ├── config.py              # DomainConfig — prohibited patterns, regex guardrails, redaction
 ├── data/
 │   ├── store.py           # SQLite (WAL) — vehicles, leads, lead_profiles, sales, ingestion_log
 │   ├── inventory.py       # Public data facade (singleton)
 │   ├── journey.py         # In-memory customer journey state (saves, favorites, reservations)
 │   └── seed.py            # 25+ demo vehicles across 7 Texas locations
-├── tools/                 # 20 modules, one per tool family
+├── tools/                 # 21 modules, one per tool family
 │   ├── orchestration.py   # run_tool_with_orchestration() — scaffold selection + raw bypass
 │   ├── search.py          # Vehicle search
 │   ├── compare.py         # Side-by-side comparison
@@ -381,10 +391,14 @@ auto_mcp/
 │   ├── scheduling.py      # Test drives + purchase readiness
 │   ├── engagement.py      # Saves, favorites, reservations, dealer contact, deposits
 │   ├── dealer_intelligence.py  # Leads, aging, pricing, funnel
+│   ├── escalation.py      # Escalation alerts + acknowledgement
 │   ├── sales.py           # Sale recording
 │   ├── ingestion.py       # CRUD + VIN normalization + API import
 │   └── stats.py           # Inventory + lead analytics
-├── scaffolds/             # 31 YAML reasoning frameworks
+├── escalation/
+│   ├── detector.py        # Pure threshold-crossing detection logic
+│   └── store.py           # SQLite escalation persistence + deduplication
+├── scaffolds/             # 32 YAML reasoning frameworks
 │   ├── vehicle_comparison.yaml
 │   ├── financing_scenarios.yaml
 │   ├── lead_hotlist.yaml
@@ -399,7 +413,7 @@ auto_mcp/
 
 ```bash
 uv run ruff check auto_mcp tests    # lint
-uv run pytest tests -q               # 252 tests
+uv run pytest tests -q               # 281 tests
 uv run pytest tests -v --tb=short    # verbose with tracebacks
 ```
 
