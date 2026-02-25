@@ -1,6 +1,8 @@
 # Commercial Licensing
 
-AutoCIP is source-available under the Business Source License 1.1 in [`LICENSE`](LICENSE).
+Consumer-Intelligence-Protocol-Automotive (`AutoCIP`, historically `CIP-Auto`
+or `CIP Auto`) is source-available under the Business Source License 1.1 in
+[`LICENSE`](LICENSE).
 
 Some commercial uses are restricted by default, including operating a competing
 commercial vehicle marketplace that monetizes dealer or manufacturer advertising,

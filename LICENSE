@@ -4,9 +4,11 @@ License text copyright (c) 2020 MariaDB Corporation Ab, All Rights Reserved.
 Parameters
 
 Licensor:             Cole (Consumer-Intelligence-Protocol-Automotive project maintainer)
-Licensed Work:        Consumer-Intelligence-Protocol-Automotive (AutoCIP), including the source code and project assets in this
-                      repository, excluding third-party software provided under
-                      separate licenses.
+Licensed Work:        Consumer-Intelligence-Protocol-Automotive ("AutoCIP",
+                      including historical project references "CIP-Auto" and
+                      "CIP Auto"), including the source code and project assets
+                      in this repository, excluding third-party software
+                      provided under separate licenses.
 Additional Use Grant: You may make production use of the Licensed Work, provided
                       Your use does not include operating a Commercial Vehicle
                       Marketplace Service.
