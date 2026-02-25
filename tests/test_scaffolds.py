@@ -22,7 +22,7 @@ def registry() -> ScaffoldRegistry:
 class TestScaffoldValidation:
     def test_all_scaffolds_valid(self):
         count, errors = validate_scaffold_directory(SCAFFOLD_DIR)
-        assert count == 13
+        assert count == 21
         assert len(errors) == 0
 
     def test_all_ids_unique(self, registry: ScaffoldRegistry):
@@ -48,6 +48,14 @@ class TestScaffoldRouting:
             ("check_availability", "availability_check"),
             ("schedule_test_drive", "test_drive_schedule"),
             ("assess_purchase_readiness", "purchase_readiness"),
+            ("get_similar_vehicles", "similar_vehicles"),
+            ("get_vehicle_history", "vehicle_history"),
+            ("estimate_cost_of_ownership", "ownership_cost"),
+            ("get_market_price_context", "market_price_context"),
+            ("compare_financing_scenarios", "financing_scenarios"),
+            ("estimate_out_the_door_price", "out_the_door_price"),
+            ("estimate_insurance", "insurance_estimate"),
+            ("get_warranty_info", "warranty_info"),
         ],
     )
     def test_tool_routes_to_scaffold(

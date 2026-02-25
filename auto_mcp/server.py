@@ -1,4 +1,4 @@
-"""AutoCIP MCP server — FastMCP entry point with 20 tool registrations."""
+"""AutoCIP MCP server — FastMCP entry point with expanded funnel tooling."""
 
 from __future__ import annotations
 
@@ -13,7 +13,20 @@ from auto_mcp.config import AUTO_DOMAIN_CONFIG
 from auto_mcp.tools.availability import check_availability_impl
 from auto_mcp.tools.compare import compare_vehicles_impl
 from auto_mcp.tools.details import get_vehicle_details_impl
+from auto_mcp.tools.engagement import (
+    contact_dealer_impl,
+    list_favorites_impl,
+    list_saved_searches_impl,
+    request_follow_up_impl,
+    reserve_vehicle_impl,
+    save_favorite_impl,
+    save_search_impl,
+    schedule_service_impl,
+    submit_purchase_deposit_impl,
+)
 from auto_mcp.tools.financing import estimate_financing_impl, estimate_trade_in_impl
+from auto_mcp.tools.financing_scenarios import compare_financing_scenarios_impl
+from auto_mcp.tools.history import get_vehicle_history_impl
 from auto_mcp.tools.ingestion import (
     bulk_import_impl,
     bulk_upsert_vehicles_impl,
@@ -23,6 +36,13 @@ from auto_mcp.tools.ingestion import (
     upsert_vehicle_impl,
 )
 from auto_mcp.tools.location_search import search_by_location_impl
+from auto_mcp.tools.market import get_market_price_context_impl
+from auto_mcp.tools.ownership import (
+    estimate_cost_of_ownership_impl,
+    estimate_insurance_impl,
+    estimate_out_the_door_price_impl,
+)
+from auto_mcp.tools.recommendations import get_similar_vehicles_impl
 from auto_mcp.tools.scheduling import (
     assess_purchase_readiness_impl,
     schedule_test_drive_impl,
@@ -30,6 +50,7 @@ from auto_mcp.tools.scheduling import (
 from auto_mcp.tools.search import search_vehicles_impl
 from auto_mcp.tools.stats import get_inventory_stats_impl, get_lead_analytics_impl
 from auto_mcp.tools.vin_search import search_by_vin_impl
+from auto_mcp.tools.warranty import get_warranty_info_impl
 
 # Load .env from project root (no extra dependency)
 _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
@@ -422,6 +443,434 @@ async def get_lead_analytics(days: int = 30) -> str:
             exc=exc,
             user_message=(
                 "I am having trouble retrieving lead analytics right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+# ── Funnel-expansion tools ────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_similar_vehicles(
+    vehicle_id: str,
+    limit: int = 5,
+    prefer_lower_price: bool = True,
+    max_price: float | None = None,
+) -> str:
+    """Recommend similar vehicles, optionally with a cheaper-price bias."""
+    try:
+        return await get_similar_vehicles_impl(
+            _get_cip(),
+            vehicle_id=vehicle_id,
+            limit=limit,
+            prefer_lower_price=prefer_lower_price,
+            max_price=max_price,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_similar_vehicles",
+            exc=exc,
+            user_message=(
+                "I am having trouble finding similar vehicles right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_vehicle_history(vehicle_id: str) -> str:
+    """Get a history summary for a vehicle (title, accidents, ownership, recalls)."""
+    try:
+        return await get_vehicle_history_impl(_get_cip(), vehicle_id=vehicle_id)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_vehicle_history",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving vehicle history right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def estimate_cost_of_ownership(
+    vehicle_id: str,
+    annual_miles: int = 12_000,
+    ownership_years: int = 5,
+    driver_age: int = 35,
+    gas_price_per_gallon: float = 3.80,
+    electricity_price_per_kwh: float = 0.16,
+    insurance_zip_code: str = "",
+) -> str:
+    """Estimate ownership cost including fuel/energy, maintenance, and insurance."""
+    try:
+        return await estimate_cost_of_ownership_impl(
+            _get_cip(),
+            vehicle_id=vehicle_id,
+            annual_miles=annual_miles,
+            ownership_years=ownership_years,
+            driver_age=driver_age,
+            gas_price_per_gallon=gas_price_per_gallon,
+            electricity_price_per_kwh=electricity_price_per_kwh,
+            insurance_zip_code=insurance_zip_code,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="estimate_cost_of_ownership",
+            exc=exc,
+            user_message=(
+                "I am having trouble estimating ownership costs right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_market_price_context(vehicle_id: str) -> str:
+    """Assess market pricing context and deal quality for a vehicle listing."""
+    try:
+        return await get_market_price_context_impl(_get_cip(), vehicle_id=vehicle_id)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_market_price_context",
+            exc=exc,
+            user_message=(
+                "I am having trouble evaluating market pricing right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def compare_financing_scenarios(
+    vehicle_price: float,
+    down_payment_options: list[float] | None = None,
+    loan_term_options: list[int] | None = None,
+    estimated_apr: float = 6.5,
+) -> str:
+    """Compare multiple financing scenarios across down payments and loan terms."""
+    try:
+        return await compare_financing_scenarios_impl(
+            _get_cip(),
+            vehicle_price=vehicle_price,
+            down_payment_options=down_payment_options,
+            loan_term_options=loan_term_options,
+            estimated_apr=estimated_apr,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="compare_financing_scenarios",
+            exc=exc,
+            user_message=(
+                "I am having trouble comparing financing scenarios right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def estimate_out_the_door_price(
+    vehicle_id: str,
+    state: str = "TX",
+    trade_in_value: float = 0.0,
+    tax_rate: float | None = None,
+    title_fee: float = 85.0,
+    registration_fee: float = 150.0,
+    doc_fee: float = 225.0,
+) -> str:
+    """Estimate out-the-door price with taxes and common fees."""
+    try:
+        return await estimate_out_the_door_price_impl(
+            _get_cip(),
+            vehicle_id=vehicle_id,
+            state=state,
+            trade_in_value=trade_in_value,
+            tax_rate=tax_rate,
+            title_fee=title_fee,
+            registration_fee=registration_fee,
+            doc_fee=doc_fee,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="estimate_out_the_door_price",
+            exc=exc,
+            user_message=(
+                "I am having trouble estimating out-the-door pricing right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def estimate_insurance(
+    vehicle_id: str,
+    driver_age: int = 35,
+    annual_miles: int = 12_000,
+    zip_code: str = "",
+) -> str:
+    """Estimate insurance cost range for a vehicle and basic driver profile."""
+    try:
+        return await estimate_insurance_impl(
+            _get_cip(),
+            vehicle_id=vehicle_id,
+            driver_age=driver_age,
+            annual_miles=annual_miles,
+            zip_code=zip_code,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="estimate_insurance",
+            exc=exc,
+            user_message=(
+                "I am having trouble estimating insurance right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_warranty_info(vehicle_id: str) -> str:
+    """Summarize likely warranty coverage windows for a vehicle."""
+    try:
+        return await get_warranty_info_impl(_get_cip(), vehicle_id=vehicle_id)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_warranty_info",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving warranty information right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def save_search(
+    search_name: str,
+    customer_id: str = "guest",
+    make: str = "",
+    model: str = "",
+    year_min: int | None = None,
+    year_max: int | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    body_type: str = "",
+    fuel_type: str = "",
+) -> str:
+    """Save a named vehicle search so the customer can return later."""
+    try:
+        return save_search_impl(
+            search_name=search_name,
+            customer_id=customer_id,
+            make=make or None,
+            model=model or None,
+            year_min=year_min,
+            year_max=year_max,
+            price_min=price_min,
+            price_max=price_max,
+            body_type=body_type or None,
+            fuel_type=fuel_type or None,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="save_search",
+            exc=exc,
+            user_message=(
+                "I am having trouble saving that search right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def list_saved_searches(customer_id: str = "guest") -> str:
+    """List saved searches for a customer profile."""
+    try:
+        return list_saved_searches_impl(customer_id=customer_id)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="list_saved_searches",
+            exc=exc,
+            user_message=(
+                "I am having trouble listing saved searches right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def save_favorite(vehicle_id: str, customer_id: str = "guest", note: str = "") -> str:
+    """Save a vehicle to a customer's favorites list."""
+    try:
+        return save_favorite_impl(vehicle_id=vehicle_id, customer_id=customer_id, note=note)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="save_favorite",
+            exc=exc,
+            user_message=(
+                "I am having trouble saving that favorite right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def list_favorites(customer_id: str = "guest") -> str:
+    """List saved favorite vehicles for a customer profile."""
+    try:
+        return list_favorites_impl(customer_id=customer_id)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="list_favorites",
+            exc=exc,
+            user_message=(
+                "I am having trouble listing favorites right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def reserve_vehicle(
+    vehicle_id: str,
+    customer_name: str,
+    customer_contact: str,
+    hold_hours: int = 48,
+    notes: str = "",
+) -> str:
+    """Create a short-term soft hold reservation on a vehicle."""
+    try:
+        return reserve_vehicle_impl(
+            vehicle_id=vehicle_id,
+            customer_name=customer_name,
+            customer_contact=customer_contact,
+            hold_hours=hold_hours,
+            notes=notes,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="reserve_vehicle",
+            exc=exc,
+            user_message=(
+                "I am having trouble creating a reservation hold right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def contact_dealer(
+    vehicle_id: str,
+    customer_name: str,
+    customer_contact: str,
+    question: str,
+    preferred_channel: str = "sms",
+) -> str:
+    """Send a customer question to the vehicle's dealer."""
+    try:
+        return contact_dealer_impl(
+            vehicle_id=vehicle_id,
+            customer_name=customer_name,
+            customer_contact=customer_contact,
+            question=question,
+            preferred_channel=preferred_channel,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="contact_dealer",
+            exc=exc,
+            user_message=(
+                "I am having trouble contacting the dealer right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def submit_purchase_deposit(
+    vehicle_id: str,
+    customer_name: str,
+    customer_contact: str,
+    deposit_amount: float,
+    financing_intent: str = "undecided",
+    paperwork_started: bool = False,
+) -> str:
+    """Submit a deposit and begin digital paperwork intake for a purchase."""
+    try:
+        return submit_purchase_deposit_impl(
+            vehicle_id=vehicle_id,
+            customer_name=customer_name,
+            customer_contact=customer_contact,
+            deposit_amount=deposit_amount,
+            financing_intent=financing_intent,
+            paperwork_started=paperwork_started,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="submit_purchase_deposit",
+            exc=exc,
+            user_message=(
+                "I am having trouble submitting the deposit right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def schedule_service(
+    vehicle_id: str,
+    customer_name: str,
+    customer_contact: str,
+    preferred_date: str,
+    service_type: str = "maintenance",
+    notes: str = "",
+) -> str:
+    """Request a post-purchase service appointment."""
+    try:
+        return schedule_service_impl(
+            vehicle_id=vehicle_id,
+            customer_name=customer_name,
+            customer_contact=customer_contact,
+            preferred_date=preferred_date,
+            service_type=service_type,
+            notes=notes,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="schedule_service",
+            exc=exc,
+            user_message=(
+                "I am having trouble scheduling service right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def request_follow_up(
+    vehicle_id: str,
+    customer_name: str,
+    customer_contact: str,
+    topic: str = "ownership check-in",
+    preferred_channel: str = "email",
+) -> str:
+    """Request a dealer follow-up after purchase."""
+    try:
+        return request_follow_up_impl(
+            vehicle_id=vehicle_id,
+            customer_name=customer_name,
+            customer_contact=customer_contact,
+            topic=topic,
+            preferred_channel=preferred_channel,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="request_follow_up",
+            exc=exc,
+            user_message=(
+                "I am having trouble requesting follow-up right now. "
                 "Please try again in a moment."
             ),
         )

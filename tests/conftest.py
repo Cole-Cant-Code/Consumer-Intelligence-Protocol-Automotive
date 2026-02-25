@@ -11,6 +11,7 @@ from cip_protocol.scaffold.matcher import clear_matcher_cache
 
 from auto_mcp.config import AUTO_DOMAIN_CONFIG
 from auto_mcp.data.inventory import set_store
+from auto_mcp.data.journey import reset_customer_journey
 from auto_mcp.data.seed import seed_demo_data
 from auto_mcp.data.store import SqliteVehicleStore
 from auto_mcp.server import set_cip_override
@@ -54,3 +55,11 @@ def _clear_matcher_cache():
     clear_matcher_cache()
     yield
     clear_matcher_cache()
+
+
+@pytest.fixture(autouse=True)
+def _clear_customer_journey():
+    """Reset in-memory customer journey state between tests."""
+    reset_customer_journey()
+    yield
+    reset_customer_journey()
