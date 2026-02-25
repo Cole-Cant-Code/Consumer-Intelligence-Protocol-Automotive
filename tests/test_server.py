@@ -225,6 +225,104 @@ class TestIngestionTools:
         assert get_vehicle("VH-200") is not None
         assert get_vehicle("VH-201") is not None
 
+    def test_upsert_vehicle_maps_common_alias_fields(self):
+        result = upsert_vehicle(vehicle={
+            "id": "VH-ALIAS-001",
+            "year": 2024,
+            "make": "Toyota",
+            "model": "Camry",
+            "bodyStyle": "Sedan",
+            "msrp": "$31,250",
+            "fuelType": "Gasoline",
+            "dealerZip": "78701",
+            "displayColor": "Midnight Black",
+        })
+        assert "upserted" in result.lower()
+
+        vehicle = get_vehicle("VH-ALIAS-001")
+        assert vehicle is not None
+        assert vehicle["body_type"] == "sedan"
+        assert vehicle["price"] == 31250.0
+        assert vehicle["fuel_type"] == "gasoline"
+        assert vehicle["dealer_zip"] == "78701"
+        assert vehicle["exterior_color"] == "Midnight Black"
+
+    def test_upsert_vehicle_accepts_missing_vin_with_soft_warning(self):
+        result = upsert_vehicle(vehicle={
+            "id": "VH-SOFTVIN-001",
+            "year": 2025,
+            "make": "Rivian",
+            "model": "R1T",
+            "body_type": "truck",
+            "price": 69_995,
+            "fuel_type": "electric",
+        })
+        assert "upserted" in result.lower()
+        assert "warning" in result.lower()
+
+        vehicle = get_vehicle("VH-SOFTVIN-001")
+        assert vehicle is not None
+        assert vehicle["source"] == "manual_low_confidence"
+
+    def test_upsert_vehicle_backfills_missing_fields_from_vin_decode(self, monkeypatch):
+        monkeypatch.setattr(
+            "auto_mcp.tools.ingestion._decode_vin_nhtsa",
+            lambda _vin: {
+                "year": 2023,
+                "make": "Honda",
+                "model": "Accord",
+                "trim": "Sport",
+                "body_type": "sedan",
+                "fuel_type": "gasoline",
+            },
+        )
+
+        result = upsert_vehicle(vehicle={
+            "id": "VH-VINDECODE-001",
+            "vin": "1HGCM82633A004352",
+            "price": 27_500,
+        })
+
+        assert "upserted successfully" in result.lower()
+        vehicle = get_vehicle("VH-VINDECODE-001")
+        assert vehicle is not None
+        assert vehicle["year"] == 2023
+        assert vehicle["make"] == "Honda"
+        assert vehicle["model"] == "Accord"
+        assert vehicle["trim"] == "Sport"
+        assert vehicle["body_type"] == "sedan"
+        assert vehicle["fuel_type"] == "gasoline"
+        assert vehicle["source"] == "manual"
+
+    def test_bulk_upsert_vehicles_returns_warning_summary_for_soft_vin(self):
+        result = bulk_upsert_vehicles(vehicles=[
+            {
+                "id": "VH-BULK-SOFTVIN-001",
+                "year": 2025,
+                "make": "Nissan",
+                "model": "Rogue",
+                "body_type": "suv",
+                "price": 30_500,
+                "fuel_type": "gasoline",
+            },
+            {
+                "id": "VH-BULK-SOFTVIN-002",
+                "year": 2024,
+                "make": "Hyundai",
+                "model": "Ioniq 5",
+                "body_type": "suv",
+                "price": 42_990,
+                "fuel_type": "electric",
+            },
+        ])
+
+        assert "2 vehicle(s) upserted" in result.lower()
+        assert "warning" in result.lower()
+        first = get_vehicle("VH-BULK-SOFTVIN-001")
+        second = get_vehicle("VH-BULK-SOFTVIN-002")
+        assert first is not None and first["source"] == "manual_low_confidence"
+        assert second is not None and second["source"] == "manual_low_confidence"
+
     def test_remove_vehicle(self):
         # Ensure it exists first
         assert get_vehicle("VH-001") is not None
