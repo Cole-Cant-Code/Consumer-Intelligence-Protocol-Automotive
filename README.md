@@ -1,4 +1,4 @@
-# AutoCIP
+# Consumer-Intelligence-Protocol-Automotive (AutoCIP)
 
 **A vehicle shopping assistant MCP server built on [CIP](https://github.com/Cole-Cant-Code/CIP-Customer-Intelligence-Protocol).**
 
@@ -79,8 +79,8 @@ Flagged content gets redacted before reaching the user.
 
 ```bash
 # Clone
-git clone https://github.com/Cole-Cant-Code/CIP-Auto.git
-cd CIP-Auto
+git clone https://github.com/Cole-Cant-Code/Consumer-Intelligence-Protocol-Automotive.git
+cd Consumer-Intelligence-Protocol-Automotive
 
 # Install (requires Python 3.11+)
 uv sync --all-extras
@@ -102,7 +102,7 @@ Add to your Claude Desktop MCP config (`~/Library/Application Support/Claude/cla
   "mcpServers": {
     "autocip": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/CIP-Auto", "mcp", "run", "auto_mcp/server.py"],
+      "args": ["run", "--directory", "/path/to/Consumer-Intelligence-Protocol-Automotive", "mcp", "run", "auto_mcp/server.py"],
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-..."
       }
