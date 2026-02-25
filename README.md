@@ -184,3 +184,4 @@ Additional licensing docs:
 - Apache 2.0 reference text: [`LICENSE-APACHE`](LICENSE-APACHE)
 - Commercial licensing information: [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md)
 - Trademark policy: [`TRADEMARKS.md`](TRADEMARKS.md)
+- Licensing contact: `licensing@manticthink.com`

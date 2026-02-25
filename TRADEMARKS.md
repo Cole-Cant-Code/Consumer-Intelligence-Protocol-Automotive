@@ -29,4 +29,7 @@ product branding and marketing.
 
 ## Questions
 
-Open a GitHub issue marked `trademark` for clarification.
+For trademark permission and usage questions, email
+`licensing@manticthink.com`.
+
+You may also open a GitHub issue marked `trademark` for clarification.

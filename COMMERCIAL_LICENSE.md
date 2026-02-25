@@ -18,8 +18,10 @@ You likely need a commercial license if you plan to:
 
 ## How To Request Terms
 
-Open a GitHub issue marked `license` (do not include confidential details), then
-we will follow up with a private channel for commercial terms.
+Email `licensing@manticthink.com` for commercial licensing terms.
+
+You may also open a GitHub issue marked `license` (do not include confidential
+details) for initial routing.
 
 ## No Legal Advice
 
