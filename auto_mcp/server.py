@@ -12,6 +12,13 @@ from mcp.server.fastmcp import FastMCP
 from auto_mcp.config import AUTO_DOMAIN_CONFIG
 from auto_mcp.tools.availability import check_availability_impl
 from auto_mcp.tools.compare import compare_vehicles_impl
+from auto_mcp.tools.dealer_intelligence import (
+    get_funnel_metrics_impl,
+    get_hot_leads_impl,
+    get_inventory_aging_report_impl,
+    get_lead_detail_impl,
+    get_pricing_opportunities_impl,
+)
 from auto_mcp.tools.details import get_vehicle_details_impl
 from auto_mcp.tools.engagement import (
     contact_dealer_impl,
@@ -43,6 +50,7 @@ from auto_mcp.tools.ownership import (
     estimate_out_the_door_price_impl,
 )
 from auto_mcp.tools.recommendations import get_similar_vehicles_impl
+from auto_mcp.tools.sales import record_sale_impl
 from auto_mcp.tools.scheduling import (
     assess_purchase_readiness_impl,
     schedule_test_drive_impl,
@@ -443,6 +451,126 @@ async def get_lead_analytics(days: int = 30) -> str:
             exc=exc,
             user_message=(
                 "I am having trouble retrieving lead analytics right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_hot_leads(
+    limit: int = 10,
+    min_score: float = 10.0,
+    dealer_zip: str = "",
+    days: int = 30,
+) -> str:
+    """Get highest-intent leads ranked by engagement score."""
+    try:
+        return await get_hot_leads_impl(
+            _get_cip(),
+            limit=limit,
+            min_score=min_score,
+            dealer_zip=dealer_zip,
+            days=days,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_hot_leads",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving hot leads right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_lead_detail(lead_id: str, days: int = 90) -> str:
+    """Get timeline and score details for a specific lead profile."""
+    try:
+        return await get_lead_detail_impl(_get_cip(), lead_id=lead_id, days=days)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_lead_detail",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving that lead detail right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_inventory_aging_report(
+    min_days_on_lot: int = 30,
+    limit: int = 100,
+    dealer_zip: str = "",
+) -> str:
+    """Get inventory aging and velocity report to identify stale units."""
+    try:
+        return await get_inventory_aging_report_impl(
+            _get_cip(),
+            min_days_on_lot=min_days_on_lot,
+            limit=limit,
+            dealer_zip=dealer_zip,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_inventory_aging_report",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving inventory aging right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_pricing_opportunities(
+    limit: int = 25,
+    stale_days_threshold: int = 45,
+    overpriced_threshold_pct: float = 5.0,
+    underpriced_threshold_pct: float = -5.0,
+) -> str:
+    """Get prioritized pricing opportunities based on market and aging signals."""
+    try:
+        return await get_pricing_opportunities_impl(
+            _get_cip(),
+            limit=limit,
+            stale_days_threshold=stale_days_threshold,
+            overpriced_threshold_pct=overpriced_threshold_pct,
+            underpriced_threshold_pct=underpriced_threshold_pct,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_pricing_opportunities",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving pricing opportunities right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_funnel_metrics(
+    days: int = 30,
+    dealer_zip: str = "",
+    breakdown_by: str = "none",
+) -> str:
+    """Get closed-loop funnel conversion metrics through sale outcomes."""
+    try:
+        return await get_funnel_metrics_impl(
+            _get_cip(),
+            days=days,
+            dealer_zip=dealer_zip,
+            breakdown_by=breakdown_by,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_funnel_metrics",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving funnel metrics right now. "
                 "Please try again in a moment."
             ),
         )
@@ -944,19 +1072,71 @@ def expire_stale_listings() -> str:
 
 
 @mcp.tool()
-def record_lead(vehicle_id: str, action: str, user_query: str = "") -> str:
+def record_lead(
+    vehicle_id: str,
+    action: str,
+    user_query: str = "",
+    lead_id: str = "",
+    customer_id: str = "",
+    session_id: str = "",
+    customer_name: str = "",
+    customer_contact: str = "",
+    source_channel: str = "direct",
+) -> str:
     """Record a user engagement lead for a vehicle.
 
-    Actions: viewed, compared, financed, test_drive, availability_check.
+    Supports optional identity stitching via lead/session/customer fields.
     """
     try:
-        return record_lead_impl(vehicle_id, action, user_query)
+        return record_lead_impl(
+            vehicle_id,
+            action,
+            user_query,
+            lead_id=lead_id,
+            customer_id=customer_id,
+            session_id=session_id,
+            customer_name=customer_name,
+            customer_contact=customer_contact,
+            source_channel=source_channel,
+        )
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="record_lead",
             exc=exc,
             user_message=(
                 "I am having trouble recording that lead right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def record_sale(
+    vehicle_id: str,
+    sold_price: float,
+    sold_at: str,
+    lead_id: str = "",
+    source_channel: str = "direct",
+    salesperson_id: str = "",
+    keep_vehicle_record: bool = True,
+) -> str:
+    """Record a completed sale outcome and link it to an optional lead."""
+    try:
+        return record_sale_impl(
+            vehicle_id=vehicle_id,
+            sold_price=sold_price,
+            sold_at=sold_at,
+            lead_id=lead_id,
+            source_channel=source_channel,
+            salesperson_id=salesperson_id,
+            keep_vehicle_record=keep_vehicle_record,
+        )
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="record_sale",
+            exc=exc,
+            user_message=(
+                "I am having trouble recording that sale right now. "
                 "Please try again in a moment."
             ),
         )

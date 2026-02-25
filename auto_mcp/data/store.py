@@ -9,6 +9,7 @@ import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from statistics import median
 from typing import (
     Any,
     Protocol,
@@ -46,6 +47,36 @@ UPSERT_SQL = (
 
 DEFAULT_TTL_DAYS = 7
 EARTH_RADIUS_MILES = 3959
+
+LEAD_SCORE_WEIGHTS: dict[str, float] = {
+    "viewed": 1.0,
+    "compared": 3.0,
+    "financed": 6.0,
+    "availability_check": 5.0,
+    "test_drive": 8.0,
+    "reserve_vehicle": 9.0,
+    "contact_dealer": 4.0,
+    "purchase_deposit": 10.0,
+}
+
+FUNNEL_STAGE_ACTIONS: dict[str, tuple[str, ...]] = {
+    "discovery": ("viewed",),
+    "consideration": ("compared", "save_favorite", "get_similar_vehicles"),
+    "financial": (
+        "financed",
+        "compare_financing_scenarios",
+        "estimate_financing",
+        "estimate_out_the_door_price",
+    ),
+    "intent": (
+        "availability_check",
+        "test_drive",
+        "reserve_vehicle",
+        "contact_dealer",
+        "purchase_deposit",
+    ),
+    "outcome": ("sale_closed",),
+}
 
 
 # ── Zip-code coordinate lookup ──────────────────────────────────────
@@ -157,8 +188,64 @@ class VehicleStore(Protocol):
     def remove_expired(self) -> int: ...
     def count(self) -> int: ...
     def get_stats(self) -> dict[str, Any]: ...
-    def record_lead(self, vehicle_id: str, action: str, user_query: str = "") -> str: ...
+    def record_lead(
+        self,
+        vehicle_id: str,
+        action: str,
+        user_query: str = "",
+        *,
+        lead_id: str = "",
+        customer_id: str = "",
+        session_id: str = "",
+        customer_name: str = "",
+        customer_contact: str = "",
+        source_channel: str = "direct",
+        event_meta: dict[str, Any] | None = None,
+    ) -> str: ...
     def get_lead_analytics(self, days: int = 30) -> dict[str, Any]: ...
+    def get_hot_leads(
+        self,
+        *,
+        limit: int = 10,
+        min_score: float = 10.0,
+        dealer_zip: str = "",
+        days: int = 30,
+    ) -> list[dict[str, Any]]: ...
+    def get_lead_detail(self, lead_id: str, *, days: int = 90) -> dict[str, Any] | None: ...
+    def get_inventory_aging_report(
+        self,
+        *,
+        min_days_on_lot: int = 30,
+        limit: int = 100,
+        dealer_zip: str = "",
+    ) -> dict[str, Any]: ...
+    def get_pricing_opportunities(
+        self,
+        *,
+        limit: int = 25,
+        stale_days_threshold: int = 45,
+        overpriced_threshold_pct: float = 5.0,
+        underpriced_threshold_pct: float = -5.0,
+    ) -> dict[str, Any]: ...
+    def record_sale(
+        self,
+        *,
+        vehicle_id: str,
+        sold_price: float,
+        sold_at: str,
+        lead_id: str = "",
+        source_channel: str = "direct",
+        salesperson_id: str = "",
+        keep_vehicle_record: bool = True,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
+    def get_funnel_metrics(
+        self,
+        *,
+        days: int = 30,
+        dealer_zip: str = "",
+        breakdown_by: str = "none",
+    ) -> dict[str, Any]: ...
 
 
 class SqliteVehicleStore:
@@ -254,6 +341,36 @@ class SqliteVehicleStore:
                 FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS lead_profiles (
+                id              TEXT PRIMARY KEY,
+                customer_id     TEXT NOT NULL DEFAULT '',
+                session_id      TEXT NOT NULL DEFAULT '',
+                customer_name   TEXT NOT NULL DEFAULT '',
+                customer_contact TEXT NOT NULL DEFAULT '',
+                status          TEXT NOT NULL DEFAULT 'new',
+                score           REAL NOT NULL DEFAULT 0,
+                first_seen_at   TEXT NOT NULL,
+                last_activity_at TEXT NOT NULL,
+                last_vehicle_id TEXT NOT NULL DEFAULT '',
+                source_channel  TEXT NOT NULL DEFAULT 'direct',
+                notes           TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS sales (
+                id              TEXT PRIMARY KEY,
+                vehicle_id      TEXT NOT NULL,
+                lead_id         TEXT NOT NULL DEFAULT '',
+                dealer_name     TEXT NOT NULL DEFAULT '',
+                dealer_zip      TEXT NOT NULL DEFAULT '',
+                sold_price      REAL NOT NULL,
+                listed_price    REAL NOT NULL,
+                source_channel  TEXT NOT NULL DEFAULT 'direct',
+                salesperson_id  TEXT NOT NULL DEFAULT '',
+                sold_at         TEXT NOT NULL,
+                recorded_at     TEXT NOT NULL,
+                metadata        TEXT NOT NULL DEFAULT '{}'
+            );
+
             CREATE TABLE IF NOT EXISTS ingestion_log (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 source          TEXT NOT NULL,
@@ -282,6 +399,46 @@ class SqliteVehicleStore:
                 ON leads(created_at);
             CREATE INDEX IF NOT EXISTS idx_leads_action
                 ON leads(action);
+            CREATE INDEX IF NOT EXISTS idx_lead_profiles_score
+                ON lead_profiles(score);
+            CREATE INDEX IF NOT EXISTS idx_lead_profiles_last_activity
+                ON lead_profiles(last_activity_at);
+            CREATE INDEX IF NOT EXISTS idx_lead_profiles_status
+                ON lead_profiles(status);
+            CREATE INDEX IF NOT EXISTS idx_sales_sold_at
+                ON sales(sold_at);
+            CREATE INDEX IF NOT EXISTS idx_sales_dealer_zip
+                ON sales(dealer_zip);
+            CREATE INDEX IF NOT EXISTS idx_sales_lead_id
+                ON sales(lead_id);
+            CREATE INDEX IF NOT EXISTS idx_sales_source_channel
+                ON sales(source_channel);
+        """)
+
+        leads_new_columns = [
+            ("lead_id", "TEXT NOT NULL DEFAULT ''"),
+            ("customer_id", "TEXT NOT NULL DEFAULT ''"),
+            ("session_id", "TEXT NOT NULL DEFAULT ''"),
+            ("customer_name", "TEXT NOT NULL DEFAULT ''"),
+            ("customer_contact", "TEXT NOT NULL DEFAULT ''"),
+            ("source_channel", "TEXT NOT NULL DEFAULT 'direct'"),
+            ("event_meta", "TEXT NOT NULL DEFAULT '{}'"),
+        ]
+        for col_name, col_def in leads_new_columns:
+            try:
+                self._conn.execute(f"ALTER TABLE leads ADD COLUMN {col_name} {col_def}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
+        self._conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_leads_lead_id
+                ON leads(lead_id);
+            CREATE INDEX IF NOT EXISTS idx_leads_customer_id
+                ON leads(customer_id);
+            CREATE INDEX IF NOT EXISTS idx_leads_session_id
+                ON leads(session_id);
+            CREATE INDEX IF NOT EXISTS idx_leads_source_channel
+                ON leads(source_channel);
         """)
 
     # ── Helpers ────────────────────────────────────────────────────
@@ -479,6 +636,251 @@ class SqliteVehicleStore:
             1 if SqliteVehicleStore._as_bool(vehicle.get("is_featured", False)) else 0,
             SqliteVehicleStore._as_int(vehicle.get("lead_count", 0)),
             updated_at,
+        )
+
+    @staticmethod
+    def _parse_iso_datetime(value: str) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _days_since(value: str, *, now: datetime) -> tuple[int, bool]:
+        parsed = SqliteVehicleStore._parse_iso_datetime(value)
+        if parsed is None:
+            return 0, True
+        delta = now - parsed
+        if delta.total_seconds() < 0:
+            return 0, False
+        return int(delta.total_seconds() // 86_400), False
+
+    @staticmethod
+    def _recency_multiplier(age_days: float) -> float:
+        if age_days <= 1:
+            return 1.0
+        if age_days <= 3:
+            return 0.85
+        if age_days <= 7:
+            return 0.70
+        if age_days <= 14:
+            return 0.50
+        if age_days <= 30:
+            return 0.30
+        return 0.0
+
+    @staticmethod
+    def _lead_score_band(score: float) -> str:
+        if score >= 22:
+            return "hot"
+        if score >= 10:
+            return "warm"
+        return "cold"
+
+    def _lookup_lead_profile_id(
+        self,
+        *,
+        lead_id: str,
+        customer_id: str,
+        customer_contact: str,
+        session_id: str,
+    ) -> str | None:
+        normalized_lead_id = lead_id.strip()
+        if normalized_lead_id:
+            row = self._conn.execute(
+                "SELECT id FROM lead_profiles WHERE id = ?",
+                (normalized_lead_id,),
+            ).fetchone()
+            if row:
+                return row[0]
+
+        normalized_customer_id = customer_id.strip()
+        if normalized_customer_id:
+            row = self._conn.execute(
+                """SELECT id FROM lead_profiles
+                   WHERE customer_id = ?
+                   ORDER BY last_activity_at DESC
+                   LIMIT 1""",
+                (normalized_customer_id,),
+            ).fetchone()
+            if row:
+                return row[0]
+
+        normalized_contact = customer_contact.strip().lower()
+        if normalized_contact:
+            row = self._conn.execute(
+                """SELECT id FROM lead_profiles
+                   WHERE customer_contact = ?
+                   ORDER BY last_activity_at DESC
+                   LIMIT 1""",
+                (normalized_contact,),
+            ).fetchone()
+            if row:
+                return row[0]
+
+        normalized_session_id = session_id.strip()
+        if normalized_session_id:
+            row = self._conn.execute(
+                """SELECT id FROM lead_profiles
+                   WHERE session_id = ?
+                   ORDER BY last_activity_at DESC
+                   LIMIT 1""",
+                (normalized_session_id,),
+            ).fetchone()
+            if row:
+                return row[0]
+
+        return None
+
+    def _resolve_or_create_lead_profile(
+        self,
+        *,
+        vehicle_id: str,
+        now_iso: str,
+        lead_id: str,
+        customer_id: str,
+        session_id: str,
+        customer_name: str,
+        customer_contact: str,
+        source_channel: str,
+    ) -> str:
+        resolved = self._lookup_lead_profile_id(
+            lead_id=lead_id,
+            customer_id=customer_id,
+            customer_contact=customer_contact,
+            session_id=session_id,
+        )
+
+        normalized_customer_id = customer_id.strip()
+        normalized_session_id = session_id.strip()
+        normalized_name = customer_name.strip()
+        normalized_contact = customer_contact.strip().lower()
+        normalized_source = source_channel.strip() or "direct"
+
+        if not resolved:
+            resolved = f"leadprof-{uuid.uuid4().hex[:12]}"
+            self._conn.execute(
+                """INSERT INTO lead_profiles (
+                    id, customer_id, session_id, customer_name, customer_contact,
+                    status, score, first_seen_at, last_activity_at, last_vehicle_id,
+                    source_channel, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    resolved,
+                    normalized_customer_id,
+                    normalized_session_id,
+                    normalized_name,
+                    normalized_contact,
+                    "new",
+                    0.0,
+                    now_iso,
+                    now_iso,
+                    vehicle_id,
+                    normalized_source,
+                    "",
+                ),
+            )
+            return resolved
+
+        existing = self._conn.execute(
+            "SELECT * FROM lead_profiles WHERE id = ?",
+            (resolved,),
+        ).fetchone()
+        if not existing:
+            return resolved
+
+        merged_customer_id = normalized_customer_id or existing["customer_id"]
+        merged_session_id = normalized_session_id or existing["session_id"]
+        merged_name = normalized_name or existing["customer_name"]
+        merged_contact = normalized_contact or existing["customer_contact"]
+        merged_source = normalized_source or existing["source_channel"]
+
+        self._conn.execute(
+            """UPDATE lead_profiles
+               SET customer_id = ?, session_id = ?, customer_name = ?, customer_contact = ?,
+                   source_channel = ?, last_activity_at = ?, last_vehicle_id = ?
+               WHERE id = ?""",
+            (
+                merged_customer_id,
+                merged_session_id,
+                merged_name,
+                merged_contact,
+                merged_source,
+                now_iso,
+                vehicle_id,
+                resolved,
+            ),
+        )
+        return resolved
+
+    def _compute_lead_score(self, *, lead_id: str, now_dt: datetime, days: int = 30) -> float:
+        since_iso = (now_dt - timedelta(days=days)).isoformat()
+        rows = self._conn.execute(
+            """SELECT action, created_at
+               FROM leads
+               WHERE lead_id = ? AND created_at > ?""",
+            (lead_id, since_iso),
+        ).fetchall()
+
+        score = 0.0
+        for row in rows:
+            weight = LEAD_SCORE_WEIGHTS.get(row["action"], 0.0)
+            if weight <= 0:
+                continue
+            created_at = self._parse_iso_datetime(row["created_at"])
+            if created_at is None:
+                continue
+            age_days = max(0.0, (now_dt - created_at).total_seconds() / 86_400)
+            score += weight * self._recency_multiplier(age_days)
+        return round(score, 2)
+
+    def _insert_lead_event(
+        self,
+        *,
+        event_id: str,
+        vehicle: dict[str, Any],
+        action: str,
+        user_query: str,
+        created_at: str,
+        lead_id: str,
+        customer_id: str,
+        session_id: str,
+        customer_name: str,
+        customer_contact: str,
+        source_channel: str,
+        event_meta: dict[str, Any],
+    ) -> None:
+        self._conn.execute(
+            """INSERT INTO leads
+                (
+                    id, vehicle_id, vehicle_vin, dealer_name, dealer_zip,
+                    action, user_query, created_at, lead_id, customer_id,
+                    session_id, customer_name, customer_contact, source_channel,
+                    event_meta
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event_id,
+                vehicle.get("id", ""),
+                vehicle.get("vin", ""),
+                vehicle.get("dealer_name", ""),
+                vehicle.get("dealer_zip", ""),
+                action,
+                user_query,
+                created_at,
+                lead_id,
+                customer_id,
+                session_id,
+                customer_name,
+                customer_contact,
+                source_channel,
+                json.dumps(event_meta),
+            ),
         )
 
     # ── Public API ─────────────────────────────────────────────────
@@ -785,41 +1187,91 @@ class SqliteVehicleStore:
             },
         }
 
-    def record_lead(self, vehicle_id: str, action: str, user_query: str = "") -> str:
-        """Record a user engagement lead. Returns lead_id."""
-        lead_id = f"lead-{uuid.uuid4().hex[:12]}"
-        now = self._now()
+    def record_lead(
+        self,
+        vehicle_id: str,
+        action: str,
+        user_query: str = "",
+        *,
+        lead_id: str = "",
+        customer_id: str = "",
+        session_id: str = "",
+        customer_name: str = "",
+        customer_contact: str = "",
+        source_channel: str = "direct",
+        event_meta: dict[str, Any] | None = None,
+    ) -> str:
+        """Record a lead event and stitch it into a lead profile."""
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
 
         vehicle = self.get(vehicle_id)
         if not vehicle:
             raise ValueError(f"Vehicle {vehicle_id} not found")
 
+        normalized_source = source_channel.strip() or "direct"
+        normalized_customer_id = customer_id.strip()
+        normalized_session_id = session_id.strip()
+        normalized_customer_name = customer_name.strip()
+        normalized_customer_contact = customer_contact.strip().lower()
+        resolved_event_meta = event_meta if isinstance(event_meta, dict) else {}
+
         with self._lock:
-            self._conn.execute(
-                """INSERT INTO leads
-                    (
-                        id, vehicle_id, vehicle_vin, dealer_name,
-                        dealer_zip, action, user_query, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    lead_id,
-                    vehicle_id,
-                    vehicle.get("vin", ""),
-                    vehicle.get("dealer_name", ""),
-                    vehicle.get("dealer_zip", ""),
-                    action,
-                    user_query,
-                    now,
-                ),
+            resolved_lead_id = self._resolve_or_create_lead_profile(
+                vehicle_id=vehicle_id,
+                now_iso=now_iso,
+                lead_id=lead_id,
+                customer_id=normalized_customer_id,
+                session_id=normalized_session_id,
+                customer_name=normalized_customer_name,
+                customer_contact=normalized_customer_contact,
+                source_channel=normalized_source,
+            )
+
+            event_id = f"lead-{uuid.uuid4().hex[:12]}"
+            self._insert_lead_event(
+                event_id=event_id,
+                vehicle=vehicle,
+                action=action,
+                user_query=user_query,
+                created_at=now_iso,
+                lead_id=resolved_lead_id,
+                customer_id=normalized_customer_id,
+                session_id=normalized_session_id,
+                customer_name=normalized_customer_name,
+                customer_contact=normalized_customer_contact,
+                source_channel=normalized_source,
+                event_meta=resolved_event_meta,
             )
             self._conn.execute(
                 "UPDATE vehicles SET lead_count = lead_count + 1 WHERE id = ?",
                 (vehicle_id,),
             )
+
+            score = self._compute_lead_score(lead_id=resolved_lead_id, now_dt=now_dt)
+            existing_profile = self._conn.execute(
+                "SELECT status FROM lead_profiles WHERE id = ?",
+                (resolved_lead_id,),
+            ).fetchone()
+            existing_status = existing_profile["status"] if existing_profile else "new"
+            if existing_status in {"won", "lost"}:
+                next_status = existing_status
+            elif score >= 22:
+                next_status = "qualified"
+            elif score >= 10:
+                next_status = "engaged"
+            else:
+                next_status = "new"
+
+            self._conn.execute(
+                """UPDATE lead_profiles
+                   SET score = ?, status = ?, last_activity_at = ?, last_vehicle_id = ?
+                   WHERE id = ?""",
+                (score, next_status, now_iso, vehicle_id, resolved_lead_id),
+            )
             self._conn.commit()
 
-        return lead_id
+        return resolved_lead_id
 
     def get_lead_analytics(self, days: int = 30) -> dict[str, Any]:
         """Lead analytics for reporting."""
@@ -866,4 +1318,704 @@ class SqliteVehicleStore:
             "daily_trend": [
                 {"date": r[0], "count": r[1]} for r in daily
             ],
+        }
+
+    def get_hot_leads(
+        self,
+        *,
+        limit: int = 10,
+        min_score: float = 10.0,
+        dealer_zip: str = "",
+        days: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Return highest-intent lead profiles ranked by score."""
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT lp.*,
+                          v.dealer_zip AS vehicle_dealer_zip,
+                          v.dealer_name AS vehicle_dealer_name
+                   FROM lead_profiles lp
+                   LEFT JOIN vehicles v ON v.id = lp.last_vehicle_id
+                   WHERE lp.score >= ?
+                     AND lp.last_activity_at > ?
+                     AND (? = '' OR COALESCE(v.dealer_zip, '') = ?)
+                   ORDER BY lp.score DESC, lp.last_activity_at DESC
+                   LIMIT ?""",
+                (min_score, since, dealer_zip, dealer_zip, limit),
+            ).fetchall()
+
+            hot_leads: list[dict[str, Any]] = []
+            for row in rows:
+                top_actions = self._conn.execute(
+                    """SELECT action, COUNT(*) as cnt
+                       FROM leads
+                       WHERE lead_id = ? AND created_at > ?
+                       GROUP BY action
+                       ORDER BY cnt DESC, action ASC
+                       LIMIT 3""",
+                    (row["id"], since),
+                ).fetchall()
+                top_vehicles = self._conn.execute(
+                    """SELECT vehicle_id, COUNT(*) as cnt
+                       FROM leads
+                       WHERE lead_id = ? AND created_at > ?
+                       GROUP BY vehicle_id
+                       ORDER BY cnt DESC, vehicle_id ASC
+                       LIMIT 3""",
+                    (row["id"], since),
+                ).fetchall()
+
+                hot_leads.append(
+                    {
+                        "lead_id": row["id"],
+                        "customer_name": row["customer_name"],
+                        "customer_contact": row["customer_contact"],
+                        "status": row["status"],
+                        "score": round(float(row["score"]), 2),
+                        "score_band": self._lead_score_band(float(row["score"])),
+                        "last_activity_at": row["last_activity_at"],
+                        "last_vehicle_id": row["last_vehicle_id"],
+                        "dealer_zip": row["vehicle_dealer_zip"] or "",
+                        "dealer_name": row["vehicle_dealer_name"] or "",
+                        "top_actions": [
+                            {"action": item["action"], "count": item["cnt"]}
+                            for item in top_actions
+                        ],
+                        "top_vehicles": [
+                            {"vehicle_id": item["vehicle_id"], "count": item["cnt"]}
+                            for item in top_vehicles
+                        ],
+                    }
+                )
+
+        return hot_leads
+
+    def get_lead_detail(self, lead_id: str, *, days: int = 90) -> dict[str, Any] | None:
+        """Return a lead profile plus event timeline and scoring breakdown."""
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        now_dt = datetime.now(timezone.utc)
+
+        with self._lock:
+            profile = self._conn.execute(
+                "SELECT * FROM lead_profiles WHERE id = ?",
+                (lead_id,),
+            ).fetchone()
+            if not profile:
+                return None
+
+            events = self._conn.execute(
+                """SELECT id, vehicle_id, action, user_query,
+                          created_at, source_channel, event_meta
+                   FROM leads
+                   WHERE lead_id = ? AND created_at > ?
+                   ORDER BY created_at DESC
+                   LIMIT 250""",
+                (lead_id, since),
+            ).fetchall()
+
+        score_by_action: dict[str, float] = {}
+        action_counts: dict[str, int] = {}
+        recent_signal_counts: dict[str, int] = {}
+        timeline: list[dict[str, Any]] = []
+
+        for event in events:
+            created_at = self._parse_iso_datetime(event["created_at"])
+            if created_at:
+                age_days = max(0.0, (now_dt - created_at).total_seconds() / 86_400)
+            else:
+                age_days = 999.0
+            action = event["action"]
+
+            weight = LEAD_SCORE_WEIGHTS.get(action, 0.0)
+            contribution = weight * self._recency_multiplier(age_days)
+            score_by_action[action] = round(score_by_action.get(action, 0.0) + contribution, 2)
+            action_counts[action] = action_counts.get(action, 0) + 1
+
+            if age_days <= 7:
+                recent_signal_counts[action] = recent_signal_counts.get(action, 0) + 1
+
+            event_meta: dict[str, Any] = {}
+            try:
+                loaded_meta = json.loads(event["event_meta"] or "{}")
+                if isinstance(loaded_meta, dict):
+                    event_meta = loaded_meta
+            except json.JSONDecodeError:
+                event_meta = {}
+
+            timeline.append(
+                {
+                    "event_id": event["id"],
+                    "vehicle_id": event["vehicle_id"],
+                    "action": action,
+                    "user_query": event["user_query"],
+                    "created_at": event["created_at"],
+                    "source_channel": event["source_channel"],
+                    "event_meta": event_meta,
+                }
+            )
+
+        recent_intent_signals = sorted(
+            (
+                {"action": action, "count": count}
+                for action, count in recent_signal_counts.items()
+            ),
+            key=lambda item: (-item["count"], item["action"]),
+        )
+
+        return {
+            "profile": {
+                "lead_id": profile["id"],
+                "customer_id": profile["customer_id"],
+                "session_id": profile["session_id"],
+                "customer_name": profile["customer_name"],
+                "customer_contact": profile["customer_contact"],
+                "status": profile["status"],
+                "score": round(float(profile["score"]), 2),
+                "score_band": self._lead_score_band(float(profile["score"])),
+                "first_seen_at": profile["first_seen_at"],
+                "last_activity_at": profile["last_activity_at"],
+                "last_vehicle_id": profile["last_vehicle_id"],
+                "source_channel": profile["source_channel"],
+            },
+            "timeline": timeline,
+            "score_breakdown": {
+                "by_action": score_by_action,
+                "action_counts": action_counts,
+                "total_score": round(float(profile["score"]), 2),
+            },
+            "recent_intent_signals": recent_intent_signals,
+        }
+
+    def get_inventory_aging_report(
+        self,
+        *,
+        min_days_on_lot: int = 30,
+        limit: int = 100,
+        dealer_zip: str = "",
+    ) -> dict[str, Any]:
+        """Return unit-level and body-type aging metrics."""
+        now_dt = datetime.now(timezone.utc)
+        since_7d = (now_dt - timedelta(days=7)).isoformat()
+        since_30d = (now_dt - timedelta(days=30)).isoformat()
+
+        with self._lock:
+            if dealer_zip:
+                rows = self._conn.execute(
+                    """SELECT id, year, make, model, trim, body_type, price, mileage,
+                              dealer_name, dealer_zip, availability_status,
+                              ingested_at, updated_at
+                       FROM vehicles
+                       WHERE dealer_zip = ?""",
+                    (dealer_zip,),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    """SELECT id, year, make, model, trim, body_type, price, mileage,
+                              dealer_name, dealer_zip, availability_status,
+                              ingested_at, updated_at
+                       FROM vehicles""",
+                ).fetchall()
+
+            lead_rows = self._conn.execute(
+                """SELECT vehicle_id,
+                          SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS leads_7d,
+                          SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS leads_30d
+                   FROM leads
+                   GROUP BY vehicle_id""",
+                (since_7d, since_30d),
+            ).fetchall()
+
+        lead_map: dict[str, dict[str, int]] = {}
+        for row in lead_rows:
+            lead_map[row["vehicle_id"]] = {
+                "leads_7d": int(row["leads_7d"] or 0),
+                "leads_30d": int(row["leads_30d"] or 0),
+            }
+
+        units: list[dict[str, Any]] = []
+        summary_by_body: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            age_days, unknown_age = self._days_since(row["ingested_at"], now=now_dt)
+            if unknown_age:
+                age_days, unknown_age = self._days_since(row["updated_at"], now=now_dt)
+
+            lead_stats = lead_map.get(row["id"], {"leads_7d": 0, "leads_30d": 0})
+            leads_7d = lead_stats["leads_7d"]
+            leads_30d = lead_stats["leads_30d"]
+            if leads_7d >= 5:
+                velocity = "high"
+            elif leads_7d >= 2:
+                velocity = "medium"
+            else:
+                velocity = "low"
+
+            stale = age_days >= min_days_on_lot
+            body_key = row["body_type"] or "unknown"
+            summary = summary_by_body.setdefault(
+                body_key,
+                {
+                    "body_type": body_key,
+                    "vehicle_count": 0,
+                    "days_on_lot_values": [],
+                    "stale_count": 0,
+                    "low_velocity_count": 0,
+                },
+            )
+            summary["vehicle_count"] += 1
+            if not unknown_age:
+                summary["days_on_lot_values"].append(age_days)
+            if stale:
+                summary["stale_count"] += 1
+            if velocity == "low":
+                summary["low_velocity_count"] += 1
+
+            units.append(
+                {
+                    "vehicle_id": row["id"],
+                    "vehicle_summary": (
+                        f"{row['year']} {row['make']} {row['model']} {row['trim']}".strip()
+                    ),
+                    "body_type": row["body_type"],
+                    "dealer_name": row["dealer_name"],
+                    "dealer_zip": row["dealer_zip"],
+                    "price": row["price"],
+                    "availability_status": row["availability_status"],
+                    "days_on_lot": age_days,
+                    "unknown_age": unknown_age,
+                    "stale": stale,
+                    "leads_7d": leads_7d,
+                    "leads_30d": leads_30d,
+                    "velocity_bucket": velocity,
+                }
+            )
+
+        units.sort(
+            key=lambda unit: (
+                unit["unknown_age"],
+                -unit["days_on_lot"],
+                unit["vehicle_id"],
+            )
+        )
+        unit_rows = units[:limit]
+
+        summary_rows: list[dict[str, Any]] = []
+        for summary in sorted(summary_by_body.values(), key=lambda item: item["body_type"]):
+            values = summary.pop("days_on_lot_values")
+            summary_rows.append(
+                {
+                    **summary,
+                    "median_days_on_lot": round(float(median(values)), 1) if values else 0.0,
+                }
+            )
+
+        return {
+            "filters": {
+                "min_days_on_lot": min_days_on_lot,
+                "limit": limit,
+                "dealer_zip": dealer_zip,
+            },
+            "total_units_considered": len(units),
+            "unit_rows": unit_rows,
+            "summary_by_body_type": summary_rows,
+        }
+
+    def get_pricing_opportunities(
+        self,
+        *,
+        limit: int = 25,
+        stale_days_threshold: int = 45,
+        overpriced_threshold_pct: float = 5.0,
+        underpriced_threshold_pct: float = -5.0,
+    ) -> dict[str, Any]:
+        """Return market-position opportunities for unit pricing actions."""
+        now_dt = datetime.now(timezone.utc)
+        since_7d = (now_dt - timedelta(days=7)).isoformat()
+        since_30d = (now_dt - timedelta(days=30)).isoformat()
+
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT id, year, make, model, trim, body_type, fuel_type, price,
+                          dealer_name, dealer_zip, ingested_at, updated_at
+                   FROM vehicles""",
+            ).fetchall()
+            lead_rows = self._conn.execute(
+                """SELECT vehicle_id,
+                          SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS leads_7d,
+                          SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS leads_30d
+                   FROM leads
+                   GROUP BY vehicle_id""",
+                (since_7d, since_30d),
+            ).fetchall()
+
+        vehicles = [dict(row) for row in rows]
+        lead_map = {
+            row["vehicle_id"]: {
+                "leads_7d": int(row["leads_7d"] or 0),
+                "leads_30d": int(row["leads_30d"] or 0),
+            }
+            for row in lead_rows
+        }
+
+        opportunities: list[dict[str, Any]] = []
+        for vehicle in vehicles:
+            age_days, unknown_age = self._days_since(vehicle["ingested_at"], now=now_dt)
+            if unknown_age:
+                age_days, unknown_age = self._days_since(vehicle["updated_at"], now=now_dt)
+
+            peers_primary = [
+                candidate["price"]
+                for candidate in vehicles
+                if candidate["id"] != vehicle["id"]
+                and candidate["make"].lower() == vehicle["make"].lower()
+                and candidate["model"].lower() == vehicle["model"].lower()
+            ]
+            if peers_primary:
+                peer_prices = peers_primary
+                peer_basis = "make_model"
+            else:
+                peer_prices = [
+                    candidate["price"]
+                    for candidate in vehicles
+                    if candidate["id"] != vehicle["id"]
+                    and candidate["body_type"].lower() == vehicle["body_type"].lower()
+                    and candidate["fuel_type"].lower() == vehicle["fuel_type"].lower()
+                ]
+                peer_basis = "body_fuel"
+
+            market_median = float(median(peer_prices)) if peer_prices else 0.0
+            price_delta_pct = (
+                ((float(vehicle["price"]) - market_median) / market_median) * 100
+                if market_median > 0
+                else 0.0
+            )
+
+            lead_stats = lead_map.get(vehicle["id"], {"leads_7d": 0, "leads_30d": 0})
+            leads_7d = lead_stats["leads_7d"]
+            leads_30d = lead_stats["leads_30d"]
+            if leads_7d >= 5:
+                velocity = "high"
+            elif leads_7d >= 2:
+                velocity = "medium"
+            else:
+                velocity = "low"
+
+            flags: list[str] = []
+            if age_days >= stale_days_threshold:
+                flags.append("stale")
+            if market_median > 0 and price_delta_pct >= overpriced_threshold_pct:
+                flags.append("overpriced")
+            if market_median > 0 and price_delta_pct <= underpriced_threshold_pct:
+                flags.append("underpriced")
+
+            if not flags:
+                continue
+
+            if "overpriced" in flags:
+                recommendation = "reprice_down"
+            elif "stale" in flags and velocity == "low":
+                recommendation = "promote_listing"
+            else:
+                recommendation = "hold_price"
+
+            opportunities.append(
+                {
+                    "vehicle_id": vehicle["id"],
+                    "vehicle_summary": (
+                        f"{vehicle['year']} {vehicle['make']} {vehicle['model']} "
+                        f"{vehicle['trim']}"
+                    ).strip(),
+                    "dealer_name": vehicle["dealer_name"],
+                    "dealer_zip": vehicle["dealer_zip"],
+                    "price": float(vehicle["price"]),
+                    "market_median_price": round(market_median, 2),
+                    "price_delta_percent": round(price_delta_pct, 2),
+                    "peer_basis": peer_basis,
+                    "peer_count": len(peer_prices),
+                    "days_on_lot": age_days,
+                    "unknown_age": unknown_age,
+                    "leads_7d": leads_7d,
+                    "leads_30d": leads_30d,
+                    "velocity_bucket": velocity,
+                    "flags": flags,
+                    "recommendation": recommendation,
+                }
+            )
+
+        priority_rank = {
+            "reprice_down": 0,
+            "promote_listing": 1,
+            "hold_price": 2,
+        }
+        opportunities.sort(
+            key=lambda item: (
+                priority_rank.get(item["recommendation"], 3),
+                -abs(float(item["price_delta_percent"])),
+                -int(item["days_on_lot"]),
+                item["vehicle_id"],
+            )
+        )
+
+        summary = {
+            "reprice_down": 0,
+            "promote_listing": 0,
+            "hold_price": 0,
+            "stale": 0,
+            "overpriced": 0,
+            "underpriced": 0,
+        }
+        for item in opportunities:
+            summary[item["recommendation"]] += 1
+            for flag in item["flags"]:
+                if flag in summary:
+                    summary[flag] += 1
+
+        return {
+            "filters": {
+                "limit": limit,
+                "stale_days_threshold": stale_days_threshold,
+                "overpriced_threshold_pct": overpriced_threshold_pct,
+                "underpriced_threshold_pct": underpriced_threshold_pct,
+            },
+            "total_opportunities": len(opportunities),
+            "summary": summary,
+            "opportunities": opportunities[:limit],
+        }
+
+    def record_sale(
+        self,
+        *,
+        vehicle_id: str,
+        sold_price: float,
+        sold_at: str,
+        lead_id: str = "",
+        source_channel: str = "direct",
+        salesperson_id: str = "",
+        keep_vehicle_record: bool = True,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a sale outcome and mark inventory status accordingly."""
+        sold_at_parsed = self._parse_iso_datetime(sold_at)
+        if sold_at_parsed is None:
+            raise ValueError("sold_at must be a valid ISO-8601 datetime string")
+
+        vehicle = self.get(vehicle_id)
+        if not vehicle:
+            raise ValueError(f"Vehicle {vehicle_id} not found")
+
+        if sold_price < 0:
+            raise ValueError("sold_price must be greater than or equal to 0")
+
+        sale_id = f"sale-{uuid.uuid4().hex[:12]}"
+        now_iso = self._now()
+        normalized_source = source_channel.strip() or "direct"
+        normalized_lead_id = lead_id.strip()
+        normalized_salesperson = salesperson_id.strip()
+        resolved_metadata = metadata if isinstance(metadata, dict) else {}
+
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO sales (
+                    id, vehicle_id, lead_id, dealer_name, dealer_zip, sold_price, listed_price,
+                    source_channel, salesperson_id, sold_at, recorded_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    sale_id,
+                    vehicle_id,
+                    normalized_lead_id,
+                    vehicle.get("dealer_name", ""),
+                    vehicle.get("dealer_zip", ""),
+                    float(sold_price),
+                    float(vehicle.get("price", 0)),
+                    normalized_source,
+                    normalized_salesperson,
+                    sold_at_parsed.isoformat(),
+                    now_iso,
+                    json.dumps(resolved_metadata),
+                ),
+            )
+
+            self._conn.execute(
+                "UPDATE vehicles SET availability_status = 'sold' WHERE id = ?",
+                (vehicle_id,),
+            )
+
+            if normalized_lead_id:
+                self._conn.execute(
+                    """UPDATE lead_profiles
+                       SET status = 'won', last_activity_at = ?, last_vehicle_id = ?
+                       WHERE id = ?""",
+                    (now_iso, vehicle_id, normalized_lead_id),
+                )
+
+            self._insert_lead_event(
+                event_id=f"lead-{uuid.uuid4().hex[:12]}",
+                vehicle=vehicle,
+                action="sale_closed",
+                user_query="Sale recorded",
+                created_at=now_iso,
+                lead_id=normalized_lead_id,
+                customer_id="",
+                session_id="",
+                customer_name="",
+                customer_contact="",
+                source_channel=normalized_source,
+                event_meta={"sale_id": sale_id, "sold_price": float(sold_price)},
+            )
+
+            if keep_vehicle_record is False:
+                self._conn.execute("DELETE FROM vehicles WHERE id = ?", (vehicle_id,))
+
+            self._conn.commit()
+
+        return {
+            "sale_id": sale_id,
+            "vehicle_id": vehicle_id,
+            "lead_id": normalized_lead_id,
+            "sold_price": round(float(sold_price), 2),
+            "listed_price": round(float(vehicle.get("price", 0)), 2),
+            "sold_at": sold_at_parsed.isoformat(),
+            "source_channel": normalized_source,
+            "salesperson_id": normalized_salesperson,
+            "vehicle_record_kept": keep_vehicle_record,
+        }
+
+    def get_funnel_metrics(
+        self,
+        *,
+        days: int = 30,
+        dealer_zip: str = "",
+        breakdown_by: str = "none",
+    ) -> dict[str, Any]:
+        """Compute stage counts and conversion rates from lead events and sales."""
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        normalized_breakdown = breakdown_by.strip().lower()
+        if normalized_breakdown not in {"none", "source_channel"}:
+            normalized_breakdown = "none"
+
+        stage_order = ("discovery", "consideration", "financial", "intent", "outcome")
+        stage_actions = FUNNEL_STAGE_ACTIONS
+
+        with self._lock:
+            if dealer_zip:
+                event_rows = self._conn.execute(
+                    """SELECT lead_id, action, source_channel
+                       FROM leads
+                       WHERE created_at > ? AND dealer_zip = ?""",
+                    (since, dealer_zip),
+                ).fetchall()
+                sales_rows = self._conn.execute(
+                    """SELECT lead_id, source_channel, sold_price
+                       FROM sales
+                       WHERE sold_at > ? AND dealer_zip = ?""",
+                    (since, dealer_zip),
+                ).fetchall()
+            else:
+                event_rows = self._conn.execute(
+                    """SELECT lead_id, action, source_channel
+                       FROM leads
+                       WHERE created_at > ?""",
+                    (since,),
+                ).fetchall()
+                sales_rows = self._conn.execute(
+                    """SELECT lead_id, source_channel, sold_price
+                       FROM sales
+                       WHERE sold_at > ?""",
+                    (since,),
+                ).fetchall()
+
+        all_channels = {row["source_channel"] or "direct" for row in event_rows}
+        all_channels.update({row["source_channel"] or "direct" for row in sales_rows})
+        channels = sorted(all_channels) if normalized_breakdown == "source_channel" else ["all"]
+
+        def _init_channel_bucket() -> dict[str, Any]:
+            return {
+                "lead_actions": {},
+                "sales_count": 0,
+                "revenue": 0.0,
+            }
+
+        channel_data: dict[str, dict[str, Any]] = {
+            channel: _init_channel_bucket() for channel in channels
+        }
+        if "all" not in channel_data:
+            channel_data["all"] = _init_channel_bucket()
+
+        for row in event_rows:
+            lead_key = row["lead_id"] or ""
+            if not lead_key:
+                continue
+            channel = row["source_channel"] or "direct"
+            action = row["action"]
+            channel_targets = [channel, "all"] if channel in channel_data else ["all"]
+            for target in channel_targets:
+                actions = channel_data[target]["lead_actions"].setdefault(lead_key, set())
+                actions.add(action)
+
+        for row in sales_rows:
+            channel = row["source_channel"] or "direct"
+            channel_targets = [channel, "all"] if channel in channel_data else ["all"]
+            for target in channel_targets:
+                channel_data[target]["sales_count"] += 1
+                channel_data[target]["revenue"] += float(row["sold_price"] or 0.0)
+
+        def _stage_counts(actions_by_lead: dict[str, set[str]]) -> dict[str, int]:
+            counts: dict[str, int] = {}
+            for stage in stage_order:
+                actions = stage_actions[stage]
+                counts[stage] = sum(
+                    1 for lead_actions in actions_by_lead.values()
+                    if any(action in lead_actions for action in actions)
+                )
+            return counts
+
+        def _conversion_rates(counts: dict[str, int]) -> dict[str, float]:
+            conversions: dict[str, float] = {}
+            pairs = [
+                ("discovery", "consideration"),
+                ("consideration", "financial"),
+                ("financial", "intent"),
+                ("intent", "outcome"),
+            ]
+            for source_stage, target_stage in pairs:
+                source_count = counts[source_stage]
+                target_count = counts[target_stage]
+                if source_count <= 0:
+                    conversions[f"{source_stage}_to_{target_stage}"] = 0.0
+                else:
+                    conversions[f"{source_stage}_to_{target_stage}"] = round(
+                        (target_count / source_count) * 100,
+                        2,
+                    )
+            return conversions
+
+        breakdown: dict[str, Any] = {}
+        for channel, details in channel_data.items():
+            if normalized_breakdown != "source_channel" and channel != "all":
+                continue
+
+            counts = _stage_counts(details["lead_actions"])
+            breakdown[channel] = {
+                "stage_counts": counts,
+                "conversions_pct": _conversion_rates(counts),
+                "sales_count": details["sales_count"],
+                "sold_revenue": round(details["revenue"], 2),
+            }
+
+        overall = breakdown.get("all", {})
+        return {
+            "period_days": days,
+            "dealer_zip": dealer_zip,
+            "breakdown_by": normalized_breakdown,
+            "overall": overall,
+            "breakdown": (
+                {
+                    key: value
+                    for key, value in breakdown.items()
+                    if key != "all"
+                }
+                if normalized_breakdown == "source_channel"
+                else {}
+            ),
         }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -371,3 +372,140 @@ class TestZipCodeDatabase:
             "32202", "94109", "48226", "33606",
         }
         assert all(db.get(zip_code) is not None for zip_code in expected)
+
+
+class TestLeadProfilesAndScoring:
+    def test_record_lead_legacy_still_works(self, store: SqliteVehicleStore):
+        store.upsert(SAMPLE_VEHICLE)
+        lead_id = store.record_lead("TEST-001", "viewed")
+        assert lead_id.startswith("leadprof-")
+
+    def test_identity_resolution_prefers_customer_id(self, store: SqliteVehicleStore):
+        store.upsert(SAMPLE_VEHICLE)
+        first = store.record_lead("TEST-001", "viewed", customer_id="cust-abc")
+        second = store.record_lead("TEST-001", "compared", customer_id="cust-abc")
+        assert first == second
+
+    def test_score_math_for_recent_events(self, store: SqliteVehicleStore):
+        store.upsert(SAMPLE_VEHICLE)
+        lead_id = store.record_lead("TEST-001", "viewed", customer_id="cust-score")
+        store.record_lead("TEST-001", "compared", lead_id=lead_id)
+
+        detail = store.get_lead_detail(lead_id)
+        assert detail is not None
+        total = detail["score_breakdown"]["total_score"]
+        assert total == pytest.approx(4.0, rel=1e-5)
+
+    def test_get_hot_leads_sorted(self, store: SqliteVehicleStore):
+        store.upsert(SAMPLE_VEHICLE)
+        store.upsert({**SAMPLE_VEHICLE, "id": "TEST-002", "vin": "TESTVIN0000000002"})
+        a = store.record_lead("TEST-001", "test_drive", customer_id="hot-a")
+        b = store.record_lead("TEST-002", "viewed", customer_id="hot-b")
+
+        hot = store.get_hot_leads(limit=5, min_score=0, days=30)
+        ids = [item["lead_id"] for item in hot]
+        assert a in ids
+        assert b in ids
+        assert hot[0]["score"] >= hot[-1]["score"]
+
+
+class TestDealerIntelligenceReports:
+    def test_inventory_aging_fallback_and_summary(self, store: SqliteVehicleStore):
+        old_ingested = (datetime.now(timezone.utc) - timedelta(days=50)).isoformat()
+        new_ingested = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+        store.upsert({
+            **SAMPLE_VEHICLE,
+            "id": "AGE-001",
+            "vin": "AGEVIN00000000001",
+            "body_type": "sedan",
+            "ingested_at": old_ingested,
+        })
+        store.upsert({
+            **SAMPLE_VEHICLE,
+            "id": "AGE-002",
+            "vin": "AGEVIN00000000002",
+            "body_type": "sedan",
+            "ingested_at": new_ingested,
+        })
+
+        report = store.get_inventory_aging_report(min_days_on_lot=30, limit=10)
+        assert report["total_units_considered"] == 2
+        assert any(item["stale"] for item in report["unit_rows"])
+        assert any(summary["body_type"] == "sedan" for summary in report["summary_by_body_type"])
+
+    def test_pricing_opportunities_flags_overpriced(self, store: SqliteVehicleStore):
+        store.upsert({
+            **SAMPLE_VEHICLE,
+            "id": "PR-001",
+            "vin": "PRICEVIN000000001",
+            "make": "Toyota",
+            "model": "Camry",
+            "price": 30_000,
+        })
+        store.upsert({
+            **SAMPLE_VEHICLE,
+            "id": "PR-002",
+            "vin": "PRICEVIN000000002",
+            "make": "Toyota",
+            "model": "Camry",
+            "price": 20_000,
+        })
+        store.upsert({
+            **SAMPLE_VEHICLE,
+            "id": "PR-003",
+            "vin": "PRICEVIN000000003",
+            "make": "Toyota",
+            "model": "Camry",
+            "price": 21_000,
+        })
+
+        opportunities = store.get_pricing_opportunities(limit=10, overpriced_threshold_pct=5.0)
+        flagged = {item["vehicle_id"] for item in opportunities["opportunities"]}
+        assert "PR-001" in flagged
+
+
+class TestSalesAndFunnel:
+    def test_record_sale_updates_vehicle_status(self, store: SqliteVehicleStore):
+        store.upsert({**SAMPLE_VEHICLE, "id": "SALE-001", "vin": "SALEVIN000000001"})
+        lead_id = store.record_lead("SALE-001", "viewed", customer_id="sale-cust")
+        result = store.record_sale(
+            vehicle_id="SALE-001",
+            sold_price=24_500,
+            sold_at="2026-02-20T12:00:00+00:00",
+            lead_id=lead_id,
+        )
+
+        assert result["vehicle_id"] == "SALE-001"
+        vehicle = store.get("SALE-001")
+        assert vehicle is not None
+        assert vehicle["availability_status"] == "sold"
+
+    def test_record_sale_can_remove_vehicle(self, store: SqliteVehicleStore):
+        store.upsert({**SAMPLE_VEHICLE, "id": "SALE-002", "vin": "SALEVIN000000002"})
+        store.record_sale(
+            vehicle_id="SALE-002",
+            sold_price=23_100,
+            sold_at="2026-02-20T12:00:00+00:00",
+            keep_vehicle_record=False,
+        )
+        assert store.get("SALE-002") is None
+
+    def test_funnel_metrics_stage_counts(self, store: SqliteVehicleStore):
+        store.upsert({**SAMPLE_VEHICLE, "id": "FUNNEL-001", "vin": "FNLVIN000000001"})
+        lead_id = store.record_lead("FUNNEL-001", "viewed", customer_id="funnel-cust")
+        store.record_lead("FUNNEL-001", "compared", lead_id=lead_id)
+        store.record_lead("FUNNEL-001", "financed", lead_id=lead_id)
+        store.record_lead("FUNNEL-001", "availability_check", lead_id=lead_id)
+        store.record_sale(
+            vehicle_id="FUNNEL-001",
+            sold_price=26_000,
+            sold_at="2026-02-20T12:00:00+00:00",
+            lead_id=lead_id,
+            source_channel="organic",
+        )
+
+        metrics = store.get_funnel_metrics(days=30, breakdown_by="source_channel")
+        overall = metrics["overall"]["stage_counts"]
+        assert overall["discovery"] >= 1
+        assert overall["outcome"] >= 1
+        assert "organic" in metrics["breakdown"]

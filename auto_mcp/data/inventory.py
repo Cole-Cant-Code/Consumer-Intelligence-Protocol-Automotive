@@ -151,11 +151,123 @@ def get_inventory_stats() -> dict[str, Any]:
     return get_store().get_stats()
 
 
-def record_vehicle_lead(vehicle_id: str, action: str, user_query: str = "") -> str:
-    """Record a user engagement lead. Returns lead_id."""
-    return get_store().record_lead(vehicle_id, action, user_query)
+def record_vehicle_lead(
+    vehicle_id: str,
+    action: str,
+    user_query: str = "",
+    *,
+    lead_id: str = "",
+    customer_id: str = "",
+    session_id: str = "",
+    customer_name: str = "",
+    customer_contact: str = "",
+    source_channel: str = "direct",
+    event_meta: dict[str, Any] | None = None,
+) -> str:
+    """Record a user engagement lead. Returns lead profile id."""
+    return get_store().record_lead(
+        vehicle_id,
+        action,
+        user_query,
+        lead_id=lead_id,
+        customer_id=customer_id,
+        session_id=session_id,
+        customer_name=customer_name,
+        customer_contact=customer_contact,
+        source_channel=source_channel,
+        event_meta=event_meta,
+    )
 
 
 def get_lead_analytics(days: int = 30) -> dict[str, Any]:
     """Get lead analytics for reporting."""
     return get_store().get_lead_analytics(days)
+
+
+def get_hot_leads(
+    *,
+    limit: int = 10,
+    min_score: float = 10.0,
+    dealer_zip: str = "",
+    days: int = 30,
+) -> list[dict[str, Any]]:
+    """Get highest-intent lead profiles ranked by score."""
+    return get_store().get_hot_leads(
+        limit=limit,
+        min_score=min_score,
+        dealer_zip=dealer_zip,
+        days=days,
+    )
+
+
+def get_lead_detail(lead_id: str, *, days: int = 90) -> dict[str, Any] | None:
+    """Get detail for one lead profile."""
+    return get_store().get_lead_detail(lead_id, days=days)
+
+
+def get_inventory_aging_report(
+    *,
+    min_days_on_lot: int = 30,
+    limit: int = 100,
+    dealer_zip: str = "",
+) -> dict[str, Any]:
+    """Get inventory aging metrics and unit-level report."""
+    return get_store().get_inventory_aging_report(
+        min_days_on_lot=min_days_on_lot,
+        limit=limit,
+        dealer_zip=dealer_zip,
+    )
+
+
+def get_pricing_opportunities(
+    *,
+    limit: int = 25,
+    stale_days_threshold: int = 45,
+    overpriced_threshold_pct: float = 5.0,
+    underpriced_threshold_pct: float = -5.0,
+) -> dict[str, Any]:
+    """Get pricing opportunities based on market context and aging."""
+    return get_store().get_pricing_opportunities(
+        limit=limit,
+        stale_days_threshold=stale_days_threshold,
+        overpriced_threshold_pct=overpriced_threshold_pct,
+        underpriced_threshold_pct=underpriced_threshold_pct,
+    )
+
+
+def record_vehicle_sale(
+    *,
+    vehicle_id: str,
+    sold_price: float,
+    sold_at: str,
+    lead_id: str = "",
+    source_channel: str = "direct",
+    salesperson_id: str = "",
+    keep_vehicle_record: bool = True,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record a completed sale and link it to an optional lead."""
+    return get_store().record_sale(
+        vehicle_id=vehicle_id,
+        sold_price=sold_price,
+        sold_at=sold_at,
+        lead_id=lead_id,
+        source_channel=source_channel,
+        salesperson_id=salesperson_id,
+        keep_vehicle_record=keep_vehicle_record,
+        metadata=metadata,
+    )
+
+
+def get_funnel_metrics(
+    *,
+    days: int = 30,
+    dealer_zip: str = "",
+    breakdown_by: str = "none",
+) -> dict[str, Any]:
+    """Get closed-loop conversion funnel metrics."""
+    return get_store().get_funnel_metrics(
+        days=days,
+        dealer_zip=dealer_zip,
+        breakdown_by=breakdown_by,
+    )

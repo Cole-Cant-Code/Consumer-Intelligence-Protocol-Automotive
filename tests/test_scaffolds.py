@@ -22,7 +22,7 @@ def registry() -> ScaffoldRegistry:
 class TestScaffoldValidation:
     def test_all_scaffolds_valid(self):
         count, errors = validate_scaffold_directory(SCAFFOLD_DIR)
-        assert count == 21
+        assert count == 26
         assert len(errors) == 0
 
     def test_all_ids_unique(self, registry: ScaffoldRegistry):
@@ -56,6 +56,11 @@ class TestScaffoldRouting:
             ("estimate_out_the_door_price", "out_the_door_price"),
             ("estimate_insurance", "insurance_estimate"),
             ("get_warranty_info", "warranty_info"),
+            ("get_hot_leads", "lead_hotlist"),
+            ("get_lead_detail", "lead_detail"),
+            ("get_inventory_aging_report", "inventory_aging_report"),
+            ("get_pricing_opportunities", "pricing_opportunities"),
+            ("get_funnel_metrics", "funnel_metrics"),
         ],
     )
     def test_tool_routes_to_scaffold(

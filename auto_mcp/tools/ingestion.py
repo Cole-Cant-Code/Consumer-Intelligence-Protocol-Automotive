@@ -85,10 +85,36 @@ def remove_vehicle_impl(vehicle_id: str) -> str:
 
 # ── New tools: leads, TTL expiration, bulk import ───────────────────
 
-_VALID_LEAD_ACTIONS = {"viewed", "compared", "financed", "test_drive", "availability_check"}
+_VALID_LEAD_ACTIONS = {
+    "viewed",
+    "compared",
+    "financed",
+    "availability_check",
+    "test_drive",
+    "reserve_vehicle",
+    "contact_dealer",
+    "purchase_deposit",
+    "save_favorite",
+    "get_similar_vehicles",
+    "compare_financing_scenarios",
+    "estimate_financing",
+    "estimate_out_the_door_price",
+    "sale_closed",
+}
 
 
-def record_lead_impl(vehicle_id: str, action: str, user_query: str = "") -> str:
+def record_lead_impl(
+    vehicle_id: str,
+    action: str,
+    user_query: str = "",
+    *,
+    lead_id: str = "",
+    customer_id: str = "",
+    session_id: str = "",
+    customer_name: str = "",
+    customer_contact: str = "",
+    source_channel: str = "direct",
+) -> str:
     """Record a user engagement lead for a vehicle."""
     if not vehicle_id or not vehicle_id.strip():
         return "Error: vehicle_id is required."
@@ -98,8 +124,21 @@ def record_lead_impl(vehicle_id: str, action: str, user_query: str = "") -> str:
             f"Must be one of: {', '.join(sorted(_VALID_LEAD_ACTIONS))}."
         )
     try:
-        lead_id = record_vehicle_lead(vehicle_id.strip(), action, user_query)
-        return f"Lead {lead_id} recorded for vehicle {vehicle_id} (action: {action})."
+        resolved_lead_id = record_vehicle_lead(
+            vehicle_id.strip(),
+            action,
+            user_query,
+            lead_id=lead_id,
+            customer_id=customer_id,
+            session_id=session_id,
+            customer_name=customer_name,
+            customer_contact=customer_contact,
+            source_channel=source_channel,
+        )
+        return (
+            f"Lead event recorded for vehicle {vehicle_id} "
+            f"(action: {action}, lead_id: {resolved_lead_id})."
+        )
     except ValueError as exc:
         return f"Error: {exc}"
 
