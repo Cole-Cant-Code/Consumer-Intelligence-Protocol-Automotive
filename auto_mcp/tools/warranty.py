@@ -8,6 +8,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 _LUXURY_MAKES = {
     "audi",
@@ -24,7 +25,15 @@ def _is_within(years_used: int, miles_used: int, years_limit: int, miles_limit: 
     return years_used <= years_limit and miles_used <= miles_limit
 
 
-async def get_warranty_info_impl(cip: CIP, *, vehicle_id: str) -> str:
+async def get_warranty_info_impl(
+    cip: CIP,
+    *,
+    vehicle_id: str,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
+) -> str:
     """Estimate likely warranty coverage windows based on vehicle age and mileage."""
     vehicle = get_vehicle(vehicle_id)
     if vehicle is None:
@@ -101,9 +110,13 @@ async def get_warranty_info_impl(cip: CIP, *, vehicle_id: str) -> str:
         ),
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_warranty_info",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

@@ -7,6 +7,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_zip_database, search_vehicles_by_location
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
 async def search_by_location_impl(
@@ -22,6 +23,10 @@ async def search_by_location_impl(
     price_max: float | None = None,
     body_type: str | None = None,
     fuel_type: str | None = None,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Search vehicles near a ZIP code and return CIP-formatted results."""
     zip_db = get_zip_database()
@@ -82,5 +87,13 @@ async def search_by_location_impl(
         ],
     }
 
-    result = await cip.run(user_input, tool_name="search_by_location", data_context=data_context)
-    return result.response.content
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="search_by_location",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
+    )

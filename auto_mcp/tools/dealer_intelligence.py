@@ -13,6 +13,7 @@ from auto_mcp.data.inventory import (
     get_lead_detail,
     get_pricing_opportunities,
 )
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
 async def get_hot_leads_impl(
@@ -22,6 +23,10 @@ async def get_hot_leads_impl(
     min_score: float = 10.0,
     dealer_zip: str = "",
     days: int = 30,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Return ranked high-intent leads with context for follow-up prioritization."""
     if limit <= 0:
@@ -51,15 +56,28 @@ async def get_hot_leads_impl(
         "hot_leads": leads,
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_hot_leads",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
-async def get_lead_detail_impl(cip: CIP, *, lead_id: str, days: int = 90) -> str:
+async def get_lead_detail_impl(
+    cip: CIP,
+    *,
+    lead_id: str,
+    days: int = 90,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
+) -> str:
     """Return timeline and score decomposition for a single lead profile."""
     if not lead_id.strip():
         return "Lead ID is required."
@@ -78,12 +96,16 @@ async def get_lead_detail_impl(cip: CIP, *, lead_id: str, days: int = 90) -> str
         "detail": detail,
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_lead_detail",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
 async def get_inventory_aging_report_impl(
@@ -92,6 +114,10 @@ async def get_inventory_aging_report_impl(
     min_days_on_lot: int = 30,
     limit: int = 100,
     dealer_zip: str = "",
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Return aging and velocity intelligence to surface stale inventory risk."""
     if min_days_on_lot < 0:
@@ -116,12 +142,16 @@ async def get_inventory_aging_report_impl(
         "report": report,
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_inventory_aging_report",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
 async def get_pricing_opportunities_impl(
@@ -131,6 +161,10 @@ async def get_pricing_opportunities_impl(
     stale_days_threshold: int = 45,
     overpriced_threshold_pct: float = 5.0,
     underpriced_threshold_pct: float = -5.0,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Return prioritized pricing actions based on market context and aging."""
     if limit <= 0:
@@ -159,12 +193,16 @@ async def get_pricing_opportunities_impl(
         "opportunities": opportunities,
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_pricing_opportunities",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
 async def get_funnel_metrics_impl(
@@ -173,6 +211,10 @@ async def get_funnel_metrics_impl(
     days: int = 30,
     dealer_zip: str = "",
     breakdown_by: str = "none",
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Return closed-loop funnel conversion metrics through sale outcomes."""
     if days <= 0:
@@ -198,9 +240,13 @@ async def get_funnel_metrics_impl(
         "metrics": metrics,
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_funnel_metrics",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

@@ -5,6 +5,7 @@ from __future__ import annotations
 from cip_protocol import CIP
 from cip_protocol.llm.providers.mock import MockProvider
 
+import auto_mcp.server as server_mod
 from auto_mcp.data.inventory import get_vehicle, search_vehicles
 from auto_mcp.data.seed import DEMO_VEHICLES as VEHICLES
 from auto_mcp.server import (
@@ -15,9 +16,12 @@ from auto_mcp.server import (
     compare_vehicles,
     estimate_financing,
     estimate_trade_in,
+    get_llm_provider,
     get_vehicle_details,
     remove_vehicle,
     schedule_test_drive,
+    set_cip_override,
+    set_llm_provider,
     upsert_vehicle,
 )
 from auto_mcp.server import (
@@ -79,6 +83,129 @@ class TestMCPToolWrappers:
         result = await mcp_search_vehicles(make="Toyota")
         assert "having trouble searching vehicles" in result.lower()
         assert "simulated-failure" not in result.lower()
+
+    async def test_search_wrapper_accepts_orchestration_params(self):
+        result = await mcp_search_vehicles(
+            make="Toyota",
+            provider="anthropic",
+            scaffold_id="vehicle_search",
+            policy="compact mode",
+            context_notes="Dealer asks for concise response.",
+            raw=False,
+        )
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    async def test_invalid_scaffold_id_fails_fast(self):
+        result = await mcp_search_vehicles(make="Toyota", scaffold_id="missing_scaffold")
+        assert "unknown scaffold_id" in result.lower()
+        assert "missing_scaffold" in result
+
+    async def test_provider_override_is_forwarded(self, monkeypatch, mock_cip: CIP):
+        captured: dict[str, str] = {}
+
+        def _fake_prepare_cip_orchestration(**kwargs):
+            captured["provider"] = kwargs["provider"]
+            return mock_cip, None, None, None
+
+        monkeypatch.setattr(
+            server_mod,
+            "_prepare_cip_orchestration",
+            _fake_prepare_cip_orchestration,
+        )
+        await mcp_search_vehicles(make="Toyota", provider="openai")
+        assert captured["provider"] == "openai"
+
+
+def _reset_provider_state() -> None:
+    server_mod._cip_pool.clear()
+    server_mod._provider_models.clear()
+    server_mod._default_provider = ""
+    set_cip_override(None)
+
+
+class TestProviderPool:
+    def test_provider_pool_builds_lazily_and_caches(self, monkeypatch):
+        _reset_provider_state()
+        monkeypatch.delenv("CIP_LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
+
+        builds: list[tuple[str, str]] = []
+
+        def _fake_build(provider: str, model: str = "") -> object:
+            builds.append((provider, model))
+            return {"provider": provider, "model": model}
+
+        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+
+        anth_1 = server_mod._get_cip("anthropic")
+        anth_2 = server_mod._get_cip("anthropic")
+        openai_1 = server_mod._get_cip("openai")
+
+        assert anth_1 is anth_2
+        assert anth_1 is not openai_1
+        assert builds == [("anthropic", ""), ("openai", "")]
+
+    def test_default_provider_is_used_when_not_specified(self, monkeypatch):
+        _reset_provider_state()
+        monkeypatch.setenv("CIP_LLM_PROVIDER", "openai")
+        monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
+
+        builds: list[tuple[str, str]] = []
+
+        def _fake_build(provider: str, model: str = "") -> object:
+            builds.append((provider, model))
+            return {"provider": provider, "model": model}
+
+        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+
+        resolved = server_mod._get_cip()
+        assert resolved == {"provider": "openai", "model": ""}
+        assert builds == [("openai", "")]
+
+    def test_set_cip_override_still_wins(self, mock_cip: CIP):
+        _reset_provider_state()
+        set_cip_override(mock_cip)
+        assert server_mod._get_cip("anthropic") is mock_cip
+
+    def test_set_llm_provider_persists_model_per_provider(self, monkeypatch):
+        _reset_provider_state()
+        monkeypatch.delenv("CIP_LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
+
+        builds: list[tuple[str, str]] = []
+
+        def _fake_build(provider: str, model: str = "") -> object:
+            builds.append((provider, model))
+            return {"provider": provider, "model": model}
+
+        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+
+        msg_a = set_llm_provider("anthropic", "claude-custom")
+        msg_b = set_llm_provider("openai", "gpt-custom")
+
+        assert "anthropic/claude-custom" in msg_a
+        assert "openai/gpt-custom" in msg_b
+        assert server_mod._provider_models["anthropic"] == "claude-custom"
+        assert server_mod._provider_models["openai"] == "gpt-custom"
+        assert builds == [("anthropic", "claude-custom"), ("openai", "gpt-custom")]
+
+    def test_get_llm_provider_keeps_legacy_prefix_and_pool_details(self, monkeypatch):
+        _reset_provider_state()
+        monkeypatch.delenv("CIP_LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
+
+        def _fake_build(provider: str, model: str = "") -> object:
+            return {"provider": provider, "model": model}
+
+        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+
+        set_llm_provider("anthropic", "claude-test")
+        status = get_llm_provider()
+
+        assert status.startswith("anthropic/claude-test")
+        assert "default=anthropic" in status
+        assert "pool=[" in status
 
 
 # ── Adversarial guardrail tests ─────────────────────────────────

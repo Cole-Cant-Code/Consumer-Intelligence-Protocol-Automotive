@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from cip_protocol import CIP
@@ -53,6 +54,40 @@ class TestSearchVehicles:
         result = await search_vehicles_impl(mock_cip, limit=0)
         assert "positive limit" in result.lower()
         assert mock_provider.call_count == 0
+
+    async def test_raw_mode_returns_envelope_and_skips_provider(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        result = await search_vehicles_impl(
+            mock_cip,
+            make="Toyota",
+            raw=True,
+            context_notes="Do not include this in raw output.",
+        )
+        payload = json.loads(result)
+        assert payload["_raw"] is True
+        assert payload["_tool"] == "search_vehicles"
+        assert payload["_meta"]["schema_version"] == 1
+        assert "data" in payload
+        assert "orchestrator_notes" not in result
+        assert mock_provider.call_count == 0
+
+    async def test_context_notes_are_passed_to_prompt(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        await search_vehicles_impl(
+            mock_cip,
+            make="Toyota",
+            context_notes="First-time buyer; prioritize total ownership cost.",
+        )
+        assert "Context From Other Domains" in mock_provider.last_user_message
+        assert "First-time buyer" in mock_provider.last_user_message
+
+    async def test_policy_is_passed_to_cip(self, mock_cip: CIP, mock_provider: MockProvider):
+        await search_vehicles_impl(
+            mock_cip, make="Toyota", policy="skip disclaimers, compact mode"
+        )
+        assert "Required Disclaimers" not in mock_provider.last_system_message
 
 
 # ── get_vehicle_details ─────────────────────────────────────────

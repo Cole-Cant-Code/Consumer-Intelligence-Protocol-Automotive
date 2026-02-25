@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from cip_protocol import CIP
 from cip_protocol.llm.providers.mock import MockProvider
 
@@ -41,6 +43,14 @@ class TestSimilarVehicles:
     ):
         result = await get_similar_vehicles_impl(mock_cip, vehicle_id="VH-999")
         assert "not found" in result.lower()
+        assert mock_provider.call_count == 0
+
+    async def test_raw_mode_skips_provider(self, mock_cip: CIP, mock_provider: MockProvider):
+        result = await get_similar_vehicles_impl(mock_cip, vehicle_id="VH-001", raw=True)
+        payload = json.loads(result)
+        assert payload["_raw"] is True
+        assert payload["_tool"] == "get_similar_vehicles"
+        assert payload["_meta"]["schema_version"] == 1
         assert mock_provider.call_count == 0
 
 
@@ -83,6 +93,17 @@ class TestOwnershipTools:
         result = await get_market_price_context_impl(mock_cip, vehicle_id="VH-001")
         assert isinstance(result, str)
         assert mock_provider.call_count == 1
+
+    async def test_market_context_passes_context_notes(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        await get_market_price_context_impl(
+            mock_cip,
+            vehicle_id="VH-001",
+            context_notes="Dealer wants repricing guidance only.",
+        )
+        assert "Context From Other Domains" in mock_provider.last_user_message
+        assert "repricing guidance" in mock_provider.last_user_message
 
     async def test_out_the_door(self, mock_cip: CIP, mock_provider: MockProvider):
         result = await estimate_out_the_door_price_impl(

@@ -7,6 +7,8 @@ from typing import Any
 
 from cip_protocol import CIP
 
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
+
 
 async def estimate_financing_impl(
     cip: CIP,
@@ -15,6 +17,10 @@ async def estimate_financing_impl(
     down_payment: float = 0.0,
     loan_term_months: int = 60,
     estimated_apr: float = 6.5,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Calculate estimated monthly payment using standard amortization."""
     if vehicle_price < 0:
@@ -58,10 +64,16 @@ async def estimate_financing_impl(
         "total_interest": round(total_interest, 2),
     }
 
-    result = await cip.run(
-        user_input, tool_name="estimate_financing", data_context=data_context
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="estimate_financing",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
 # Base MSRP lookup for trade-in depreciation model
@@ -95,6 +107,10 @@ async def estimate_trade_in_impl(
     model: str,
     mileage: int,
     condition: str = "good",
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Estimate trade-in value using a depreciation model."""
     current_year = datetime.now(timezone.utc).year
@@ -146,7 +162,13 @@ async def estimate_trade_in_impl(
         "vehicle_age_years": age,
     }
 
-    result = await cip.run(
-        user_input, tool_name="estimate_trade_in", data_context=data_context
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="estimate_trade_in",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

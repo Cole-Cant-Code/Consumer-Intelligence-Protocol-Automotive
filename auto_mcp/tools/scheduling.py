@@ -7,6 +7,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
 async def schedule_test_drive_impl(
@@ -17,6 +18,10 @@ async def schedule_test_drive_impl(
     preferred_time: str,
     customer_name: str,
     customer_phone: str,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Submit a test drive scheduling request."""
     vehicle = get_vehicle(vehicle_id)
@@ -41,10 +46,16 @@ async def schedule_test_drive_impl(
         "customer_phone": customer_phone,
     }
 
-    result = await cip.run(
-        user_input, tool_name="schedule_test_drive", data_context=data_context
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="schedule_test_drive",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
 async def assess_purchase_readiness_impl(
@@ -55,6 +66,10 @@ async def assess_purchase_readiness_impl(
     has_financing: bool = False,
     has_insurance: bool = False,
     has_trade_in: bool = False,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Assess how ready the customer is to purchase a specific vehicle."""
     vehicle = get_vehicle(vehicle_id)
@@ -93,7 +108,13 @@ async def assess_purchase_readiness_impl(
         "has_trade_in": has_trade_in,
     }
 
-    result = await cip.run(
-        user_input, tool_name="assess_purchase_readiness", data_context=data_context
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="assess_purchase_readiness",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

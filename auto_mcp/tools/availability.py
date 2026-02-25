@@ -7,6 +7,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
 async def check_availability_impl(
@@ -14,6 +15,10 @@ async def check_availability_impl(
     *,
     vehicle_id: str,
     zip_code: str = "",
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Check availability and dealer info for a specific vehicle."""
     vehicle = get_vehicle(vehicle_id)
@@ -39,7 +44,13 @@ async def check_availability_impl(
         "customer_zip_code": zip_code,
     }
 
-    result = await cip.run(
-        user_input, tool_name="check_availability", data_context=data_context
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="check_availability",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

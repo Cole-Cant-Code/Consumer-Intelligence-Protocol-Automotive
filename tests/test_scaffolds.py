@@ -5,9 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from cip_protocol import CIP
+from cip_protocol.llm.providers.mock import MockProvider
 from cip_protocol.scaffold.loader import load_scaffold_directory
 from cip_protocol.scaffold.registry import ScaffoldRegistry
 from cip_protocol.scaffold.validator import validate_scaffold_directory
+
+from auto_mcp.config import AUTO_DOMAIN_CONFIG
 
 SCAFFOLD_DIR = str(Path(__file__).resolve().parent.parent / "auto_mcp" / "scaffolds")
 
@@ -22,7 +26,7 @@ def registry() -> ScaffoldRegistry:
 class TestScaffoldValidation:
     def test_all_scaffolds_valid(self):
         count, errors = validate_scaffold_directory(SCAFFOLD_DIR)
-        assert count == 26
+        assert count == 31
         assert len(errors) == 0
 
     def test_all_ids_unique(self, registry: ScaffoldRegistry):
@@ -73,6 +77,28 @@ class TestScaffoldRouting:
     def test_unknown_tool_not_found(self, registry: ScaffoldRegistry):
         matches = registry.find_by_tool("nonexistent_tool")
         assert len(matches) == 0
+
+    def test_dealer_variants_registered(self, registry: ScaffoldRegistry):
+        expected = {
+            "vehicle_search_dealer",
+            "vehicle_details_dealer",
+            "vehicle_comparison_dealer",
+            "availability_check_dealer",
+            "market_price_context_dealer",
+        }
+        for scaffold_id in expected:
+            scaffold = registry.get(scaffold_id)
+            assert scaffold is not None, f"Expected scaffold '{scaffold_id}'"
+
+    async def test_explicit_dealer_scaffold_selectable_by_id(self):
+        cip = CIP.from_config(AUTO_DOMAIN_CONFIG, SCAFFOLD_DIR, MockProvider("ok"))
+        result = await cip.run(
+            "Review this inventory slice for dealer operations.",
+            tool_name="search_vehicles",
+            data_context={"vehicles": []},
+            scaffold_id="vehicle_search_dealer",
+        )
+        assert result.scaffold_id == "vehicle_search_dealer"
 
 
 class TestScaffoldContent:

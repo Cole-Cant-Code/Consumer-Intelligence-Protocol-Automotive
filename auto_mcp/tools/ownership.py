@@ -8,6 +8,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 _STATE_TAX_RATES = {
     "TX": 0.0625,
@@ -111,6 +112,10 @@ async def estimate_insurance_impl(
     driver_age: int = 35,
     annual_miles: int = 12_000,
     zip_code: str = "",
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Estimate annual and monthly insurance range for a vehicle."""
     if driver_age <= 0:
@@ -153,12 +158,16 @@ async def estimate_insurance_impl(
         "insurance_estimate": insurance,
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="estimate_insurance",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
 async def estimate_out_the_door_price_impl(
@@ -171,6 +180,10 @@ async def estimate_out_the_door_price_impl(
     title_fee: float = 85.0,
     registration_fee: float = 150.0,
     doc_fee: float = 225.0,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Estimate out-the-door vehicle price including tax and common fees."""
     if trade_in_value < 0:
@@ -234,12 +247,16 @@ async def estimate_out_the_door_price_impl(
         },
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="estimate_out_the_door_price",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
 
 
 async def estimate_cost_of_ownership_impl(
@@ -252,6 +269,10 @@ async def estimate_cost_of_ownership_impl(
     gas_price_per_gallon: float = 3.80,
     electricity_price_per_kwh: float = 0.16,
     insurance_zip_code: str = "",
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Estimate multi-year ownership cost including fuel, maintenance, insurance."""
     if annual_miles <= 0:
@@ -355,9 +376,13 @@ async def estimate_cost_of_ownership_impl(
         },
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="estimate_cost_of_ownership",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

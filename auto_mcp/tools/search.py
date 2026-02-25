@@ -7,6 +7,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import search_vehicles_windowed
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
 async def search_vehicles_impl(
@@ -22,6 +23,10 @@ async def search_vehicles_impl(
     fuel_type: str | None = None,
     limit: int = 10,
     offset: int = 0,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Search the vehicle inventory with optional filters and return CIP-formatted results."""
     if limit <= 0:
@@ -95,5 +100,13 @@ async def search_vehicles_impl(
         ],
     }
 
-    result = await cip.run(user_input, tool_name="search_vehicles", data_context=data_context)
-    return result.response.content
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="search_vehicles",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
+    )

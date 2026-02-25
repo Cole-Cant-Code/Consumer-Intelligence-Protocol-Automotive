@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from cip_protocol import CIP
 from cip_protocol.llm.providers.mock import MockProvider
 
@@ -46,6 +48,33 @@ class TestDealerLeadTools:
         assert isinstance(result, str)
         assert mock_provider.call_count == 1
 
+    async def test_get_hot_leads_raw_mode_skips_provider(
+        self,
+        mock_cip: CIP,
+        mock_provider: MockProvider,
+    ):
+        record_vehicle_lead("VH-004", "viewed", customer_id="cust-raw")
+        result = await get_hot_leads_impl(mock_cip, min_score=0.0, raw=True)
+        payload = json.loads(result)
+        assert payload["_raw"] is True
+        assert payload["_tool"] == "get_hot_leads"
+        assert payload["_meta"]["schema_version"] == 1
+        assert mock_provider.call_count == 0
+
+    async def test_context_notes_pass_through_to_prompt(
+        self,
+        mock_cip: CIP,
+        mock_provider: MockProvider,
+    ):
+        record_vehicle_lead("VH-005", "viewed", customer_id="cust-note")
+        await get_hot_leads_impl(
+            mock_cip,
+            min_score=0.0,
+            context_notes="Dealer principal wants compact actions only.",
+        )
+        assert "Context From Other Domains" in mock_provider.last_user_message
+        assert "compact actions only" in mock_provider.last_user_message
+
 
 class TestDealerInventoryTools:
     async def test_get_inventory_aging_report_returns_string(
@@ -65,6 +94,14 @@ class TestDealerInventoryTools:
         result = await get_pricing_opportunities_impl(mock_cip, limit=20)
         assert isinstance(result, str)
         assert mock_provider.call_count == 1
+
+    async def test_policy_passthrough_affects_prompt(
+        self,
+        mock_cip: CIP,
+        mock_provider: MockProvider,
+    ):
+        await get_pricing_opportunities_impl(mock_cip, limit=10, policy="skip disclaimers")
+        assert "Required Disclaimers" not in mock_provider.last_system_message
 
 
 class TestDealerFunnelAndSales:

@@ -74,9 +74,10 @@ logger = logging.getLogger(__name__)
 
 _SCAFFOLD_DIR = str(Path(__file__).parent / "scaffolds")
 
-_cip_instance: CIP | None = None
-_cip_provider: str = ""
-_cip_model: str = ""
+_cip_pool: dict[str, CIP] = {}
+_provider_models: dict[str, str] = {}
+_default_provider: str = ""
+_cip_override: CIP | None = None
 
 _KEY_MAP = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -87,6 +88,34 @@ _DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-6",
     "openai": "gpt-4o",
 }
+
+
+def _normalize_provider_name(provider: str) -> str:
+    return provider.strip().lower()
+
+
+def _resolve_provider_name(provider: str = "") -> str:
+    resolved = (
+        _normalize_provider_name(provider)
+        or _normalize_provider_name(_default_provider)
+        or _normalize_provider_name(os.environ.get("CIP_LLM_PROVIDER", "anthropic"))
+    )
+    if resolved not in _KEY_MAP:
+        raise ValueError(f"Unknown provider '{resolved}'. Use 'anthropic' or 'openai'.")
+    return resolved
+
+
+def _resolve_model_for_provider(provider: str) -> str:
+    model = _provider_models.get(provider, "").strip()
+    if model:
+        return model
+
+    env_provider = _normalize_provider_name(os.environ.get("CIP_LLM_PROVIDER", "anthropic"))
+    env_model = os.environ.get("CIP_LLM_MODEL", "").strip()
+    if env_model and provider == env_provider:
+        _provider_models[provider] = env_model
+        return env_model
+    return ""
 
 
 def _build_cip(provider: str, model: str = "") -> CIP:
@@ -102,22 +131,72 @@ def _build_cip(provider: str, model: str = "") -> CIP:
     )
 
 
-def _get_cip() -> CIP:
-    """Lazy singleton for the CIP instance. Uses override if set (for testing)."""
-    global _cip_instance, _cip_provider, _cip_model  # noqa: PLW0603
-    if _cip_instance is None:
-        provider = _cip_provider or os.environ.get("CIP_LLM_PROVIDER", "anthropic")
-        model = _cip_model or os.environ.get("CIP_LLM_MODEL", "")
-        _cip_instance = _build_cip(provider, model)
-        _cip_provider = provider
-        _cip_model = model
-    return _cip_instance
+def _get_cip(provider: str = "") -> CIP:
+    """Lazy provider pool for CIP instances. Uses override if set (for testing)."""
+    global _default_provider  # noqa: PLW0603
+
+    if _cip_override is not None:
+        return _cip_override
+
+    resolved_provider = _resolve_provider_name(provider)
+    if not _default_provider:
+        _default_provider = resolved_provider
+
+    if resolved_provider not in _cip_pool:
+        resolved_model = _resolve_model_for_provider(resolved_provider)
+        _cip_pool[resolved_provider] = _build_cip(resolved_provider, resolved_model)
+
+    return _cip_pool[resolved_provider]
 
 
 def set_cip_override(cip: CIP | None) -> None:
     """Inject a CIP instance (e.g. with MockProvider) for testing."""
-    global _cip_instance  # noqa: PLW0603
-    _cip_instance = cip
+    global _cip_override  # noqa: PLW0603
+    _cip_override = cip
+
+
+def _normalize_optional_text(value: str) -> str | None:
+    normalized = value.strip()
+    return normalized if normalized else None
+
+
+def _normalize_orchestration(
+    *,
+    cip: CIP,
+    tool_name: str,
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+) -> tuple[str | None, str | None, str | None]:
+    resolved_scaffold_id = _normalize_optional_text(scaffold_id)
+    if resolved_scaffold_id and cip.registry.get(resolved_scaffold_id) is None:
+        raise ValueError(
+            f"Unknown scaffold_id '{resolved_scaffold_id}' for tool '{tool_name}'."
+        )
+    return (
+        resolved_scaffold_id,
+        _normalize_optional_text(policy),
+        _normalize_optional_text(context_notes),
+    )
+
+
+def _prepare_cip_orchestration(
+    *,
+    tool_name: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+) -> tuple[CIP, str | None, str | None, str | None]:
+    cip = _get_cip(provider)
+    resolved_scaffold_id, resolved_policy, resolved_context_notes = _normalize_orchestration(
+        cip=cip,
+        tool_name=tool_name,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+    )
+    return cip, resolved_scaffold_id, resolved_policy, resolved_context_notes
 
 
 def _log_and_return_tool_error(
@@ -133,20 +212,27 @@ def _log_and_return_tool_error(
 
 @mcp.tool()
 def set_llm_provider(provider: str, model: str = "") -> str:
-    """Switch the LLM provider used for CIP reasoning.
+    """Set the default LLM provider used for CIP reasoning.
 
     provider: 'anthropic' or 'openai'
     model: optional model override (defaults to claude-sonnet-4-6 / gpt-4o)
     """
-    global _cip_instance, _cip_provider, _cip_model  # noqa: PLW0603
-    provider = provider.strip().lower()
+    global _default_provider  # noqa: PLW0603
+
+    provider = _normalize_provider_name(provider)
     if provider not in _KEY_MAP:
         return f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'."
-    resolved_model = model.strip() or _DEFAULT_MODELS.get(provider, "")
+
+    resolved_model = (
+        model.strip()
+        or _provider_models.get(provider, "").strip()
+        or _DEFAULT_MODELS.get(provider, "")
+    )
+
     try:
-        _cip_instance = _build_cip(provider, resolved_model)
-        _cip_provider = provider
-        _cip_model = resolved_model
+        _provider_models[provider] = resolved_model
+        _default_provider = provider
+        _cip_pool[provider] = _build_cip(provider, resolved_model)
         return f"CIP reasoning now uses {provider}/{resolved_model}."
     except Exception as exc:
         return _log_and_return_tool_error(
@@ -158,9 +244,28 @@ def set_llm_provider(provider: str, model: str = "") -> str:
 
 @mcp.tool()
 def get_llm_provider() -> str:
-    """Return the current CIP LLM provider and model."""
-    _get_cip()  # ensure initialized
-    return f"{_cip_provider}/{_cip_model}"
+    """Return current default provider/model and initialized provider pool details."""
+    global _default_provider  # noqa: PLW0603
+
+    try:
+        resolved_default = _resolve_provider_name(_default_provider)
+    except ValueError as exc:
+        return str(exc)
+
+    if not _default_provider:
+        _default_provider = resolved_default
+
+    resolved_model = (
+        _provider_models.get(resolved_default, "").strip()
+        or _resolve_model_for_provider(resolved_default)
+        or _DEFAULT_MODELS.get(resolved_default, "")
+    )
+    initialized = sorted(_cip_pool.keys())
+    pool_text = ", ".join(initialized) if initialized else "none"
+    return (
+        f"{resolved_default}/{resolved_model} "
+        f"(default={resolved_default}, pool=[{pool_text}])"
+    )
 
 
 @mcp.tool()
@@ -175,11 +280,25 @@ async def search_vehicles(
     fuel_type: str = "",
     limit: int = 10,
     offset: int = 0,
-    ) -> str:
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Search for vehicles by filters with optional pagination via limit/offset."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="search_vehicles",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await search_vehicles_impl(
-            _get_cip(),
+            cip,
             make=make or None,
             model=model or None,
             year_min=year_min,
@@ -190,7 +309,13 @@ async def search_vehicles(
             fuel_type=fuel_type or None,
             limit=limit,
             offset=offset,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="search_vehicles",
@@ -203,10 +328,35 @@ async def search_vehicles(
 
 
 @mcp.tool()
-async def get_vehicle_details(vehicle_id: str) -> str:
+async def get_vehicle_details(
+    vehicle_id: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Get detailed specifications and information about a specific vehicle by ID."""
     try:
-        return await get_vehicle_details_impl(_get_cip(), vehicle_id=vehicle_id)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_vehicle_details",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_vehicle_details_impl(
+            cip,
+            vehicle_id=vehicle_id,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_vehicle_details",
@@ -219,10 +369,35 @@ async def get_vehicle_details(vehicle_id: str) -> str:
 
 
 @mcp.tool()
-async def compare_vehicles(vehicle_ids: list[str]) -> str:
+async def compare_vehicles(
+    vehicle_ids: list[str],
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Compare 2-3 vehicles side by side. Provide a list of vehicle IDs."""
     try:
-        return await compare_vehicles_impl(_get_cip(), vehicle_ids=vehicle_ids)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="compare_vehicles",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await compare_vehicles_impl(
+            cip,
+            vehicle_ids=vehicle_ids,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="compare_vehicles",
@@ -240,16 +415,36 @@ async def estimate_financing(
     down_payment: float = 0.0,
     loan_term_months: int = 60,
     estimated_apr: float = 6.5,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Estimate monthly payments for a vehicle purchase. All figures are estimates only."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="estimate_financing",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await estimate_financing_impl(
-            _get_cip(),
+            cip,
             vehicle_price=vehicle_price,
             down_payment=down_payment,
             loan_term_months=loan_term_months,
             estimated_apr=estimated_apr,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="estimate_financing",
@@ -268,17 +463,37 @@ async def estimate_trade_in(
     model: str,
     mileage: int,
     condition: str = "good",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Estimate trade-in value based on year, make, model, mileage, and condition."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="estimate_trade_in",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await estimate_trade_in_impl(
-            _get_cip(),
+            cip,
             year=year,
             make=make,
             model=model,
             mileage=mileage,
             condition=condition,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="estimate_trade_in",
@@ -291,12 +506,37 @@ async def estimate_trade_in(
 
 
 @mcp.tool()
-async def check_availability(vehicle_id: str, zip_code: str = "") -> str:
+async def check_availability(
+    vehicle_id: str,
+    zip_code: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Check if a specific vehicle is currently available and get dealer information."""
     try:
-        return await check_availability_impl(
-            _get_cip(), vehicle_id=vehicle_id, zip_code=zip_code
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="check_availability",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
         )
+        return await check_availability_impl(
+            cip,
+            vehicle_id=vehicle_id,
+            zip_code=zip_code,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="check_availability",
@@ -315,17 +555,37 @@ async def schedule_test_drive(
     preferred_time: str,
     customer_name: str,
     customer_phone: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Request a test drive appointment for a specific vehicle."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="schedule_test_drive",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await schedule_test_drive_impl(
-            _get_cip(),
+            cip,
             vehicle_id=vehicle_id,
             preferred_date=preferred_date,
             preferred_time=preferred_time,
             customer_name=customer_name,
             customer_phone=customer_phone,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="schedule_test_drive",
@@ -344,17 +604,37 @@ async def assess_purchase_readiness(
     has_financing: bool = False,
     has_insurance: bool = False,
     has_trade_in: bool = False,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Assess how ready you are to purchase a specific vehicle based on your situation."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="assess_purchase_readiness",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await assess_purchase_readiness_impl(
-            _get_cip(),
+            cip,
             vehicle_id=vehicle_id,
             budget=budget,
             has_financing=has_financing,
             has_insurance=has_insurance,
             has_trade_in=has_trade_in,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="assess_purchase_readiness",
@@ -381,11 +661,25 @@ async def search_by_location(
     price_max: float | None = None,
     body_type: str = "",
     fuel_type: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Search for vehicles near a ZIP code within a given radius."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="search_by_location",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await search_by_location_impl(
-            _get_cip(),
+            cip,
             zip_code=zip_code,
             radius_miles=radius_miles,
             make=make or None,
@@ -396,7 +690,13 @@ async def search_by_location(
             price_max=price_max,
             body_type=body_type or None,
             fuel_type=fuel_type or None,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="search_by_location",
@@ -409,10 +709,35 @@ async def search_by_location(
 
 
 @mcp.tool()
-async def search_by_vin(vin: str) -> str:
+async def search_by_vin(
+    vin: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Look up a specific vehicle by its 17-character VIN."""
     try:
-        return await search_by_vin_impl(_get_cip(), vin=vin)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="search_by_vin",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await search_by_vin_impl(
+            cip,
+            vin=vin,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="search_by_vin",
@@ -425,10 +750,33 @@ async def search_by_vin(vin: str) -> str:
 
 
 @mcp.tool()
-async def get_inventory_stats() -> str:
+async def get_inventory_stats(
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Get comprehensive inventory statistics including coverage, pricing, and freshness."""
     try:
-        return await get_inventory_stats_impl(_get_cip())
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_inventory_stats",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_inventory_stats_impl(
+            cip,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_inventory_stats",
@@ -441,10 +789,35 @@ async def get_inventory_stats() -> str:
 
 
 @mcp.tool()
-async def get_lead_analytics(days: int = 30) -> str:
+async def get_lead_analytics(
+    days: int = 30,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Get lead engagement analytics for dealer reporting over a specified period."""
     try:
-        return await get_lead_analytics_impl(_get_cip(), days=days)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_lead_analytics",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_lead_analytics_impl(
+            cip,
+            days=days,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_lead_analytics",
@@ -462,16 +835,36 @@ async def get_hot_leads(
     min_score: float = 10.0,
     dealer_zip: str = "",
     days: int = 30,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Get highest-intent leads ranked by engagement score."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_hot_leads",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await get_hot_leads_impl(
-            _get_cip(),
+            cip,
             limit=limit,
             min_score=min_score,
             dealer_zip=dealer_zip,
             days=days,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_hot_leads",
@@ -484,10 +877,37 @@ async def get_hot_leads(
 
 
 @mcp.tool()
-async def get_lead_detail(lead_id: str, days: int = 90) -> str:
+async def get_lead_detail(
+    lead_id: str,
+    days: int = 90,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Get timeline and score details for a specific lead profile."""
     try:
-        return await get_lead_detail_impl(_get_cip(), lead_id=lead_id, days=days)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_lead_detail",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_lead_detail_impl(
+            cip,
+            lead_id=lead_id,
+            days=days,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_lead_detail",
@@ -504,15 +924,35 @@ async def get_inventory_aging_report(
     min_days_on_lot: int = 30,
     limit: int = 100,
     dealer_zip: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Get inventory aging and velocity report to identify stale units."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_inventory_aging_report",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await get_inventory_aging_report_impl(
-            _get_cip(),
+            cip,
             min_days_on_lot=min_days_on_lot,
             limit=limit,
             dealer_zip=dealer_zip,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_inventory_aging_report",
@@ -530,16 +970,36 @@ async def get_pricing_opportunities(
     stale_days_threshold: int = 45,
     overpriced_threshold_pct: float = 5.0,
     underpriced_threshold_pct: float = -5.0,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Get prioritized pricing opportunities based on market and aging signals."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_pricing_opportunities",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await get_pricing_opportunities_impl(
-            _get_cip(),
+            cip,
             limit=limit,
             stale_days_threshold=stale_days_threshold,
             overpriced_threshold_pct=overpriced_threshold_pct,
             underpriced_threshold_pct=underpriced_threshold_pct,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_pricing_opportunities",
@@ -556,15 +1016,35 @@ async def get_funnel_metrics(
     days: int = 30,
     dealer_zip: str = "",
     breakdown_by: str = "none",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Get closed-loop funnel conversion metrics through sale outcomes."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_funnel_metrics",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await get_funnel_metrics_impl(
-            _get_cip(),
+            cip,
             days=days,
             dealer_zip=dealer_zip,
             breakdown_by=breakdown_by,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_funnel_metrics",
@@ -585,16 +1065,36 @@ async def get_similar_vehicles(
     limit: int = 5,
     prefer_lower_price: bool = True,
     max_price: float | None = None,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Recommend similar vehicles, optionally with a cheaper-price bias."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_similar_vehicles",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await get_similar_vehicles_impl(
-            _get_cip(),
+            cip,
             vehicle_id=vehicle_id,
             limit=limit,
             prefer_lower_price=prefer_lower_price,
             max_price=max_price,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_similar_vehicles",
@@ -607,10 +1107,35 @@ async def get_similar_vehicles(
 
 
 @mcp.tool()
-async def get_vehicle_history(vehicle_id: str) -> str:
+async def get_vehicle_history(
+    vehicle_id: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Get a history summary for a vehicle (title, accidents, ownership, recalls)."""
     try:
-        return await get_vehicle_history_impl(_get_cip(), vehicle_id=vehicle_id)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_vehicle_history",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_vehicle_history_impl(
+            cip,
+            vehicle_id=vehicle_id,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_vehicle_history",
@@ -631,11 +1156,25 @@ async def estimate_cost_of_ownership(
     gas_price_per_gallon: float = 3.80,
     electricity_price_per_kwh: float = 0.16,
     insurance_zip_code: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Estimate ownership cost including fuel/energy, maintenance, and insurance."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="estimate_cost_of_ownership",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await estimate_cost_of_ownership_impl(
-            _get_cip(),
+            cip,
             vehicle_id=vehicle_id,
             annual_miles=annual_miles,
             ownership_years=ownership_years,
@@ -643,7 +1182,13 @@ async def estimate_cost_of_ownership(
             gas_price_per_gallon=gas_price_per_gallon,
             electricity_price_per_kwh=electricity_price_per_kwh,
             insurance_zip_code=insurance_zip_code,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="estimate_cost_of_ownership",
@@ -656,10 +1201,35 @@ async def estimate_cost_of_ownership(
 
 
 @mcp.tool()
-async def get_market_price_context(vehicle_id: str) -> str:
+async def get_market_price_context(
+    vehicle_id: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Assess market pricing context and deal quality for a vehicle listing."""
     try:
-        return await get_market_price_context_impl(_get_cip(), vehicle_id=vehicle_id)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_market_price_context",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_market_price_context_impl(
+            cip,
+            vehicle_id=vehicle_id,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_market_price_context",
@@ -677,16 +1247,36 @@ async def compare_financing_scenarios(
     down_payment_options: list[float] | None = None,
     loan_term_options: list[int] | None = None,
     estimated_apr: float = 6.5,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Compare multiple financing scenarios across down payments and loan terms."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="compare_financing_scenarios",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await compare_financing_scenarios_impl(
-            _get_cip(),
+            cip,
             vehicle_price=vehicle_price,
             down_payment_options=down_payment_options,
             loan_term_options=loan_term_options,
             estimated_apr=estimated_apr,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="compare_financing_scenarios",
@@ -707,11 +1297,25 @@ async def estimate_out_the_door_price(
     title_fee: float = 85.0,
     registration_fee: float = 150.0,
     doc_fee: float = 225.0,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Estimate out-the-door price with taxes and common fees."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="estimate_out_the_door_price",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await estimate_out_the_door_price_impl(
-            _get_cip(),
+            cip,
             vehicle_id=vehicle_id,
             state=state,
             trade_in_value=trade_in_value,
@@ -719,7 +1323,13 @@ async def estimate_out_the_door_price(
             title_fee=title_fee,
             registration_fee=registration_fee,
             doc_fee=doc_fee,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="estimate_out_the_door_price",
@@ -737,16 +1347,36 @@ async def estimate_insurance(
     driver_age: int = 35,
     annual_miles: int = 12_000,
     zip_code: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
 ) -> str:
     """Estimate insurance cost range for a vehicle and basic driver profile."""
     try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="estimate_insurance",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
         return await estimate_insurance_impl(
-            _get_cip(),
+            cip,
             vehicle_id=vehicle_id,
             driver_age=driver_age,
             annual_miles=annual_miles,
             zip_code=zip_code,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
         )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="estimate_insurance",
@@ -759,10 +1389,35 @@ async def estimate_insurance(
 
 
 @mcp.tool()
-async def get_warranty_info(vehicle_id: str) -> str:
+async def get_warranty_info(
+    vehicle_id: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
     """Summarize likely warranty coverage windows for a vehicle."""
     try:
-        return await get_warranty_info_impl(_get_cip(), vehicle_id=vehicle_id)
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_warranty_info",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_warranty_info_impl(
+            cip,
+            vehicle_id=vehicle_id,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="get_warranty_info",

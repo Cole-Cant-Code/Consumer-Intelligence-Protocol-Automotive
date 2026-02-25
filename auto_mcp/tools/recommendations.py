@@ -7,6 +7,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle, search_vehicles
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
 def _score_similarity(source: dict[str, Any], candidate: dict[str, Any]) -> float:
@@ -41,6 +42,10 @@ async def get_similar_vehicles_impl(
     limit: int = 5,
     prefer_lower_price: bool = True,
     max_price: float | None = None,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
 ) -> str:
     """Recommend vehicles similar to a target listing."""
     if limit <= 0:
@@ -130,9 +135,13 @@ async def get_similar_vehicles_impl(
         "recommendation_count": len(top),
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_similar_vehicles",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

@@ -9,6 +9,7 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle, search_vehicles
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
 def _estimate_days_on_lot(vehicle: dict[str, Any]) -> int:
@@ -38,7 +39,15 @@ def _deal_grade(price_delta_pct: float) -> str:
     return "high"
 
 
-async def get_market_price_context_impl(cip: CIP, *, vehicle_id: str) -> str:
+async def get_market_price_context_impl(
+    cip: CIP,
+    *,
+    vehicle_id: str,
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
+) -> str:
     """Assess if a listing is priced below, near, or above peer market pricing."""
     vehicle = get_vehicle(vehicle_id)
     if vehicle is None:
@@ -105,9 +114,13 @@ async def get_market_price_context_impl(cip: CIP, *, vehicle_id: str) -> str:
         },
     }
 
-    result = await cip.run(
-        user_input,
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
         tool_name="get_market_price_context",
         data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content

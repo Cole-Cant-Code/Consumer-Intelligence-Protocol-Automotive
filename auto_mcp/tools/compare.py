@@ -7,9 +7,18 @@ from typing import Any
 from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle
+from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
 
-async def compare_vehicles_impl(cip: CIP, *, vehicle_ids: list[str]) -> str:
+async def compare_vehicles_impl(
+    cip: CIP,
+    *,
+    vehicle_ids: list[str],
+    scaffold_id: str | None = None,
+    policy: str | None = None,
+    context_notes: str | None = None,
+    raw: bool = False,
+) -> str:
     """Compare 2-3 vehicles side by side."""
     if len(vehicle_ids) < 2:
         return "Please provide at least 2 vehicle IDs to compare."
@@ -33,7 +42,13 @@ async def compare_vehicles_impl(cip: CIP, *, vehicle_ids: list[str]) -> str:
         "comparison_count": len(vehicles),
     }
 
-    result = await cip.run(
-        user_input, tool_name="compare_vehicles", data_context=data_context
+    return await run_tool_with_orchestration(
+        cip,
+        user_input=user_input,
+        tool_name="compare_vehicles",
+        data_context=data_context,
+        scaffold_id=scaffold_id,
+        policy=policy,
+        context_notes=context_notes,
+        raw=raw,
     )
-    return result.response.content
