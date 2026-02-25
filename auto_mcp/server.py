@@ -31,6 +31,10 @@ from auto_mcp.tools.engagement import (
     schedule_service_impl,
     submit_purchase_deposit_impl,
 )
+from auto_mcp.tools.escalation import (
+    acknowledge_escalation_impl,
+    get_escalations_impl,
+)
 from auto_mcp.tools.financing import estimate_financing_impl, estimate_trade_in_impl
 from auto_mcp.tools.financing_scenarios import compare_financing_scenarios_impl
 from auto_mcp.tools.history import get_vehicle_history_impl
@@ -153,6 +157,22 @@ def set_cip_override(cip: CIP | None) -> None:
     """Inject a CIP instance (e.g. with MockProvider) for testing."""
     global _cip_override  # noqa: PLW0603
     _cip_override = cip
+
+
+_escalation_store_ref: object | None = None
+
+
+def _get_escalation_store():
+    """Lazy accessor — enables escalations on the SQLite store on first call."""
+    global _escalation_store_ref  # noqa: PLW0603
+    if _escalation_store_ref is None:
+        from auto_mcp.data.inventory import get_store
+        from auto_mcp.data.store import SqliteVehicleStore
+
+        store = get_store()
+        if isinstance(store, SqliteVehicleStore):
+            _escalation_store_ref = store.enable_escalations()
+    return _escalation_store_ref
 
 
 def _normalize_optional_text(value: str) -> str | None:
@@ -1822,6 +1842,79 @@ async def bulk_import_from_api(
             exc=exc,
             user_message=(
                 "I am having trouble importing vehicles right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+# ── Escalation tools ──────────────────────────────────────────────
+
+
+@mcp.tool()
+async def get_escalations(
+    limit: int = 20,
+    include_delivered: bool = False,
+    escalation_type: str = "",
+    days: int = 30,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Get recent lead escalation alerts triggered by scoring threshold crossings."""
+    try:
+        esc_store = _get_escalation_store()
+        if esc_store is None:
+            return "Escalation tracking is not available."
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_escalations",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_escalations_impl(
+            cip,
+            esc_store,
+            limit=limit,
+            include_delivered=include_delivered,
+            escalation_type=escalation_type,
+            days=days,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_escalations",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving escalations right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+def acknowledge_escalation(escalation_id: str) -> str:
+    """Mark a lead escalation alert as delivered/acknowledged."""
+    try:
+        esc_store = _get_escalation_store()
+        if esc_store is None:
+            return "Escalation tracking is not available."
+        return acknowledge_escalation_impl(esc_store, escalation_id=escalation_id)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="acknowledge_escalation",
+            exc=exc,
+            user_message=(
+                "I am having trouble acknowledging that escalation right now. "
                 "Please try again in a moment."
             ),
         )

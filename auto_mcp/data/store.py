@@ -255,6 +255,7 @@ class SqliteVehicleStore:
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._escalation_store: object | None = None
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
@@ -262,6 +263,16 @@ class SqliteVehicleStore:
             self._conn.execute("PRAGMA temp_store=MEMORY")
             self._conn.execute("PRAGMA cache_size=-20000")
             self._create_schema()
+
+    # ── Escalation opt-in ──────────────────────────────────────────
+
+    def enable_escalations(self) -> object:
+        """Enable escalation detection. Returns the EscalationStore for tool use."""
+        from auto_mcp.escalation.store import EscalationStore as _EscStore
+
+        if self._escalation_store is None:
+            self._escalation_store = _EscStore(self._conn, self._lock)
+        return self._escalation_store
 
     # ── Schema ─────────────────────────────────────────────────────
 
@@ -1270,6 +1281,26 @@ class SqliteVehicleStore:
                 (score, next_status, now_iso, vehicle_id, resolved_lead_id),
             )
             self._conn.commit()
+
+            # Escalation detection — fire if a threshold was crossed.
+            if self._escalation_store is not None and existing_status != next_status:
+                from auto_mcp.escalation.detector import check_escalation
+
+                esc = check_escalation(
+                    lead_id=resolved_lead_id,
+                    old_status=existing_status,
+                    new_status=next_status,
+                    score=score,
+                    vehicle_id=vehicle_id,
+                    customer_name=normalized_customer_name,
+                    customer_contact=normalized_customer_contact,
+                    source_channel=normalized_source,
+                    action=action,
+                )
+                if esc and not self._escalation_store.has_active_escalation(
+                    resolved_lead_id, esc["escalation_type"]
+                ):
+                    self._escalation_store.save(esc)
 
         return resolved_lead_id
 

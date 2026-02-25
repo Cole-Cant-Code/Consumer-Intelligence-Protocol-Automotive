@@ -14,6 +14,7 @@ from auto_mcp.data.inventory import set_store
 from auto_mcp.data.journey import reset_customer_journey
 from auto_mcp.data.seed import seed_demo_data
 from auto_mcp.data.store import SqliteVehicleStore
+from auto_mcp.escalation.detector import clear_callbacks
 from auto_mcp.server import set_cip_override
 
 SCAFFOLD_DIR = str(Path(__file__).resolve().parent.parent / "auto_mcp" / "scaffolds")
@@ -42,10 +43,15 @@ def _inject_mock_cip(mock_cip: CIP):
 @pytest.fixture(autouse=True)
 def _inject_test_store():
     """Give every test a fresh, isolated, seeded in-memory vehicle store."""
+    import auto_mcp.server as _srv
+
     store = SqliteVehicleStore(":memory:")
     seed_demo_data(store)
+    store.enable_escalations()
     set_store(store)
+    _srv._escalation_store_ref = None  # reset lazy accessor
     yield
+    _srv._escalation_store_ref = None
     set_store(None)
 
 
@@ -63,3 +69,11 @@ def _clear_customer_journey():
     reset_customer_journey()
     yield
     reset_customer_journey()
+
+
+@pytest.fixture(autouse=True)
+def _clear_escalation_callbacks():
+    """Reset escalation callbacks between tests."""
+    clear_callbacks()
+    yield
+    clear_callbacks()

@@ -37,6 +37,7 @@ CIP_ROUTED_TOOLS = [
     "get_inventory_aging_report",
     "get_pricing_opportunities",
     "get_funnel_metrics",
+    "get_escalations",
 ]
 
 NON_CIP_TOOLS = [
@@ -58,6 +59,7 @@ NON_CIP_TOOLS = [
     "request_follow_up",
     "set_llm_provider",
     "get_llm_provider",
+    "acknowledge_escalation",
 ]
 
 
