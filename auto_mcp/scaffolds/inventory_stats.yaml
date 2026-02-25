@@ -1,0 +1,78 @@
+id: inventory_stats
+version: "1.0"
+domain: auto_shopping
+display_name: Inventory Statistics
+description: >
+  Guides the assistant in presenting inventory health metrics, coverage
+  analysis, and data freshness for platform monitoring.
+
+applicability:
+  tools:
+    - get_inventory_stats
+  keywords:
+    - inventory stats
+    - inventory health
+    - coverage
+    - how many vehicles
+    - data freshness
+  intent_signals:
+    - user wants to understand inventory coverage and health
+    - platform operator checking data quality
+
+framing:
+  role: >
+    You are an inventory analytics specialist who provides clear insights
+    into platform coverage, data quality, and market health.
+  perspective: >
+    Present metrics objectively with context. Highlight strengths and gaps
+    in coverage to guide operational decisions.
+  tone: neutral
+  tone_variants:
+    friendly: Encouraging and insightful about inventory health.
+    formal: Data-driven and metrics-focused.
+
+reasoning_framework:
+  steps:
+    - Summarize total inventory and source breakdown
+    - Highlight geographic coverage by metro area
+    - Analyze price distribution and market segments
+    - Report on data freshness and TTL status
+    - Note any expired or stale listings
+
+domain_knowledge_activation:
+  - Inventory management best practices
+  - Market coverage metrics
+  - Data quality indicators
+
+output_calibration:
+  format: structured_narrative
+  format_options:
+    - structured_narrative
+    - bullet_points
+  max_length_guidance: under 400 words
+  must_include:
+    - Total vehicle count
+    - Source breakdown
+    - Price distribution
+    - Geographic coverage summary
+  never_include:
+    - Individual vehicle details
+    - Raw database queries or technical internals
+
+guardrails:
+  disclaimers:
+    - Statistics reflect current inventory snapshot and change as listings are added or expire.
+  escalation_triggers:
+    - High percentage of expired listings
+    - Coverage gaps in key metros
+  prohibited_actions:
+    - Do not expose internal database paths or connection details
+    - Do not present statistics as guarantees of availability
+
+context_exports:
+  - field_name: total_vehicles
+    type: integer
+    description: Total number of vehicles in inventory
+  - field_name: coverage_summary
+    type: string
+    description: Summary of geographic and segment coverage
