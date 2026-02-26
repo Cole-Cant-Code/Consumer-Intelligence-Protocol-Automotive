@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,12 @@ from cip_protocol import CIP
 
 from auto_mcp.data.inventory import get_vehicle
 from auto_mcp.tools.orchestration import run_tool_with_orchestration
+
+_MILEAGE_OR_ODOMETER_PATTERN = re.compile(
+    r"(?P<label>\b(?:mileage|odometer(?:\s+reading)?)\b[^0-9]{0,20})"
+    r"(?P<value>\d[\d,]*)\s*(?P<unit>mi|miles)\b",
+    flags=re.IGNORECASE,
+)
 
 
 def _seed(text: str) -> int:
@@ -55,6 +62,15 @@ def _build_history(vehicle: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _enforce_mileage_consistency(response: str, mileage: int) -> str:
+    canonical_mileage = f"{max(0, mileage):,}"
+
+    def _replace(match: re.Match[str]) -> str:
+        return f"{match.group('label')}{canonical_mileage} {match.group('unit')}"
+
+    return _MILEAGE_OR_ODOMETER_PATTERN.sub(_replace, response)
+
+
 async def get_vehicle_history_impl(
     cip: CIP,
     *,
@@ -95,7 +111,7 @@ async def get_vehicle_history_impl(
         ),
     }
 
-    return await run_tool_with_orchestration(
+    response = await run_tool_with_orchestration(
         cip,
         user_input=user_input,
         tool_name="get_vehicle_history",
@@ -105,3 +121,4 @@ async def get_vehicle_history_impl(
         context_notes=context_notes,
         raw=raw,
     )
+    return _enforce_mileage_consistency(response, int(vehicle["mileage"]))

@@ -422,6 +422,18 @@ _VALID_LEAD_ACTIONS = {
     "sale_closed",
 }
 
+_LEAD_ACTION_ALIASES = {
+    # Backward-compatible alias retained for older clients.
+    "vehicle_view": "viewed",
+}
+
+
+def _canonicalize_lead_action(action: str) -> str:
+    if not isinstance(action, str):
+        return ""
+    normalized = action.strip().lower()
+    return _LEAD_ACTION_ALIASES.get(normalized, normalized)
+
 
 def record_lead_impl(
     vehicle_id: str,
@@ -438,7 +450,8 @@ def record_lead_impl(
     """Record a user engagement lead for a vehicle."""
     if not vehicle_id or not vehicle_id.strip():
         return "Error: vehicle_id is required."
-    if action not in _VALID_LEAD_ACTIONS:
+    canonical_action = _canonicalize_lead_action(action)
+    if canonical_action not in _VALID_LEAD_ACTIONS:
         return (
             f"Error: invalid action '{action}'. "
             f"Must be one of: {', '.join(sorted(_VALID_LEAD_ACTIONS))}."
@@ -446,7 +459,7 @@ def record_lead_impl(
     try:
         resolved_lead_id = record_vehicle_lead(
             vehicle_id.strip(),
-            action,
+            canonical_action,
             user_query,
             lead_id=lead_id,
             customer_id=customer_id,
@@ -457,7 +470,7 @@ def record_lead_impl(
         )
         return (
             f"Lead event recorded for vehicle {vehicle_id} "
-            f"(action: {action}, lead_id: {resolved_lead_id})."
+            f"(action: {canonical_action}, lead_id: {resolved_lead_id})."
         )
     except ValueError as exc:
         return f"Error: {exc}"

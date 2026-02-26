@@ -54,6 +54,11 @@ class TestDealerIntelligenceWrappers:
         result = record_lead(vehicle_id="VH-004", action="viewed", user_query="legacy")
         assert "lead event recorded" in result.lower()
 
+    def test_record_lead_accepts_vehicle_view_alias(self):
+        result = record_lead(vehicle_id="VH-004", action="vehicle_view")
+        assert "lead event recorded" in result.lower()
+        assert "action: viewed" in result.lower()
+
     def test_record_lead_with_identity_fields(self):
         result = record_lead(
             vehicle_id="VH-005",

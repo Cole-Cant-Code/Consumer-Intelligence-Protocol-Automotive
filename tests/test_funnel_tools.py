@@ -65,6 +65,21 @@ class TestVehicleHistory:
         assert "not found" in result.lower()
         assert mock_provider.call_count == 0
 
+    async def test_enforces_canonical_mileage_when_generation_drifts(
+        self,
+        mock_cip: CIP,
+        mock_provider: MockProvider,
+    ):
+        mock_provider.response_content = (
+            "Mileage: 8,412 mi. Odometer reading 8,412 miles is consistent. "
+            "Service every 5,000 miles."
+        )
+        result = await get_vehicle_history_impl(mock_cip, vehicle_id="VH-002")
+        assert "Mileage: 8 mi" in result
+        assert "Odometer reading 8 miles" in result
+        assert "5,000 miles" in result
+        assert mock_provider.call_count == 1
+
 
 class TestOwnershipTools:
     async def test_cost_of_ownership(self, mock_cip: CIP, mock_provider: MockProvider):
