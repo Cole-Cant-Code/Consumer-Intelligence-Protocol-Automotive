@@ -7,18 +7,9 @@ from typing import Any
 
 from cip_protocol import CIP
 
+from auto_mcp.constants import LUXURY_MAKES
 from auto_mcp.data.inventory import get_vehicle
 from auto_mcp.tools.orchestration import run_tool_with_orchestration
-
-_LUXURY_MAKES = {
-    "audi",
-    "bmw",
-    "genesis",
-    "lexus",
-    "mercedes-benz",
-    "tesla",
-    "volvo",
-}
 
 
 def _is_within(years_used: int, miles_used: int, years_limit: int, miles_limit: int) -> bool:
@@ -43,7 +34,7 @@ async def get_warranty_info_impl(
     years_used = max(0, current_year - int(vehicle["year"]))
     miles_used = int(vehicle["mileage"])
 
-    luxury = vehicle["make"].lower() in _LUXURY_MAKES
+    luxury = vehicle["make"].lower() in LUXURY_MAKES
     fuel_type = vehicle["fuel_type"].lower()
 
     if luxury:

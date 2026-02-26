@@ -4,28 +4,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
-import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
 from urllib import error, parse, request
 
+from auto_mcp.constants import VIN_RE
 from auto_mcp.data.inventory import (
     get_store,
     record_vehicle_lead,
     remove_expired_vehicles,
 )
 from auto_mcp.normalization import (
-    BODY_TYPE_MAP,
-    FUEL_TYPE_MAP,
-    clean_numeric_string,
     normalize_body_type,
     normalize_fuel_type,
     parse_float,
     parse_int,
     parse_price,
 )
+
+logger = logging.getLogger(__name__)
 
 _REQUIRED_FIELDS = ("id", "year", "make", "model", "body_type", "price", "fuel_type")
 _REQUIRED_STRING_FIELDS = ("id", "make", "model", "body_type", "fuel_type")
@@ -55,10 +55,6 @@ _CANONICAL_ALIASES = {
     "url": "source_url",
 }
 
-_BODY_TYPE_MAP = BODY_TYPE_MAP
-_FUEL_TYPE_MAP = FUEL_TYPE_MAP
-
-_VIN_PATTERN = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 _VIN_YEAR_CODES = "ABCDEFGHJKLMNPRSTVWXY123456789"
 
 _WMI_TO_MAKE = {
@@ -92,14 +88,6 @@ def _is_blank(value: Any) -> bool:
     return False
 
 
-_clean_numeric_string = clean_numeric_string
-_parse_price = parse_price
-_parse_int = parse_int
-_parse_float = parse_float
-_normalize_body_type = normalize_body_type
-_normalize_fuel_type = normalize_fuel_type
-
-
 def _decode_model_year_from_vin(vin: str) -> int | None:
     if len(vin) != 17:
         return None
@@ -131,7 +119,7 @@ def _decode_vin_nhtsa(vin: str) -> dict[str, Any]:
     except RuntimeError:
         pass
     else:
-        # Avoid synchronous network IO on an active event loop thread.
+        logger.debug("Skipping synchronous NHTSA VIN decode — running in async context")
         return {}
 
     url = (
@@ -169,15 +157,15 @@ def _decode_vin_nhtsa(vin: str) -> dict[str, Any]:
     if drivetrain:
         decoded["drivetrain"] = drivetrain
 
-    model_year = _parse_int(raw.get("ModelYear"))
+    model_year = parse_int(raw.get("ModelYear"))
     if model_year is not None:
         decoded["year"] = model_year
 
-    body_type = _normalize_body_type(str(raw.get("BodyClass", "")).strip())
+    body_type = normalize_body_type(str(raw.get("BodyClass", "")).strip())
     if body_type:
         decoded["body_type"] = body_type
 
-    fuel_type = _normalize_fuel_type(str(raw.get("FuelTypePrimary", "")).strip())
+    fuel_type = normalize_fuel_type(str(raw.get("FuelTypePrimary", "")).strip())
     if fuel_type:
         decoded["fuel_type"] = fuel_type
 
@@ -223,24 +211,24 @@ def _canonicalize_vehicle(vehicle: dict[str, Any]) -> dict[str, Any]:
             normalized[field] = normalized[field].strip()
 
     if "price" in normalized and isinstance(normalized["price"], str):
-        parsed_price = _parse_price(normalized["price"])
+        parsed_price = parse_price(normalized["price"])
         if parsed_price is not None:
             normalized["price"] = parsed_price
     for integer_field in ("mileage", "mpg_city", "mpg_highway", "safety_rating"):
         if integer_field in normalized and isinstance(normalized[integer_field], str):
-            parsed_int = _parse_int(normalized[integer_field])
+            parsed_int = parse_int(normalized[integer_field])
             if parsed_int is not None:
                 normalized[integer_field] = parsed_int
     for float_field in ("latitude", "longitude"):
         if float_field in normalized and isinstance(normalized[float_field], str):
-            parsed_float = _parse_float(normalized[float_field])
+            parsed_float = parse_float(normalized[float_field])
             if parsed_float is not None:
                 normalized[float_field] = parsed_float
 
     if "body_type" in normalized and isinstance(normalized["body_type"], str):
-        normalized["body_type"] = _normalize_body_type(normalized["body_type"])
+        normalized["body_type"] = normalize_body_type(normalized["body_type"])
     if "fuel_type" in normalized and isinstance(normalized["fuel_type"], str):
-        normalized["fuel_type"] = _normalize_fuel_type(normalized["fuel_type"])
+        normalized["fuel_type"] = normalize_fuel_type(normalized["fuel_type"])
     if "vin" in normalized and isinstance(normalized["vin"], str):
         normalized["vin"] = normalized["vin"].upper()
 
@@ -265,7 +253,7 @@ def _maybe_apply_vin_enrichment(
         return True
 
     vehicle["vin"] = vin
-    if not _VIN_PATTERN.fullmatch(vin):
+    if not VIN_RE.fullmatch(vin):
         warnings.append("VIN format is invalid; decode skipped and record marked low-confidence.")
         return True
 

@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from typing import Any
 
 import aiohttp
 
-logger = logging.getLogger(__name__)
+from auto_mcp.constants import VIN_RE
 
-_VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$", re.IGNORECASE)
+logger = logging.getLogger(__name__)
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=12)
 _CACHE_TTL_SECONDS = 300  # 5 minutes
 
@@ -63,7 +62,7 @@ SHARED_AUTODEV_CACHE = _TTLCache()
 
 def _normalize_vin(vin: str) -> str:
     normalized = vin.strip().upper()
-    if not _VIN_RE.fullmatch(normalized):
+    if not VIN_RE.fullmatch(normalized):
         raise ValueError(
             f"Invalid VIN '{vin}'. VIN must be exactly 17 characters "
             "(letters/digits, excluding I/O/Q)."

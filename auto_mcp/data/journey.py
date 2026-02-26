@@ -17,6 +17,9 @@ _purchase_deposits: list[dict[str, Any]] = []
 _service_requests: list[dict[str, Any]] = []
 _follow_ups: list[dict[str, Any]] = []
 
+_MAX_LIST_SIZE = 10_000
+_MAX_TTL_DAYS = 90
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -29,6 +32,14 @@ def _now_iso() -> str:
 def _as_customer(customer_id: str) -> str:
     value = customer_id.strip()
     return value or "guest"
+
+
+def _prune_list(items: list[dict[str, Any]]) -> None:
+    """Remove entries older than _MAX_TTL_DAYS and cap at _MAX_LIST_SIZE."""
+    cutoff = (_now() - timedelta(days=_MAX_TTL_DAYS)).isoformat()
+    items[:] = [r for r in items if r.get("created_at", "") >= cutoff]
+    if len(items) > _MAX_LIST_SIZE:
+        items[:] = items[-_MAX_LIST_SIZE:]
 
 
 def reset_customer_journey() -> None:
@@ -63,7 +74,13 @@ def save_search(
     }
 
     with _lock:
-        _saved_searches.setdefault(normalized_customer, []).append(record)
+        searches = _saved_searches.setdefault(normalized_customer, [])
+        for existing in searches:
+            if existing["search_name"] == search_name:
+                existing["filters"] = filters
+                existing["last_used_at"] = now_iso
+                return existing
+        searches.append(record)
 
     return record
 
@@ -128,6 +145,7 @@ def reserve_vehicle(
     now_iso = now.isoformat()
 
     with _lock:
+        _prune_list(_reservations)
         for existing in _reservations:
             if existing["vehicle_id"] != vehicle_id:
                 continue
@@ -176,6 +194,7 @@ def contact_dealer(
     }
 
     with _lock:
+        _prune_list(_dealer_messages)
         _dealer_messages.append(record)
 
     return record
@@ -205,6 +224,7 @@ def submit_purchase_deposit(
     }
 
     with _lock:
+        _prune_list(_purchase_deposits)
         _purchase_deposits.append(record)
 
     return record
@@ -233,6 +253,7 @@ def schedule_service(
     }
 
     with _lock:
+        _prune_list(_service_requests)
         _service_requests.append(record)
 
     return record
@@ -259,6 +280,7 @@ def request_follow_up(
     }
 
     with _lock:
+        _prune_list(_follow_ups)
         _follow_ups.append(record)
 
     return record

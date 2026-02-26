@@ -7,6 +7,7 @@ from typing import Any
 
 from cip_protocol import CIP
 
+from auto_mcp.constants import LUXURY_MAKES
 from auto_mcp.data.inventory import get_vehicle
 from auto_mcp.tools.orchestration import run_tool_with_orchestration
 
@@ -30,16 +31,6 @@ _FUEL_MAINTENANCE_PER_MILE = {
     "electric": 0.065,
 }
 
-_LUXURY_MAKES = {
-    "audi",
-    "bmw",
-    "genesis",
-    "lexus",
-    "mercedes-benz",
-    "tesla",
-    "volvo",
-}
-
 _ESTIMATE_DISCLAIMER = (
     "These figures are estimates for informational purposes only and do not "
     "constitute financial advice. Actual costs may vary based on individual "
@@ -58,7 +49,7 @@ def _estimate_insurance_range(
     base = 820.0 + (float(vehicle["price"]) * 0.018)
 
     body_multiplier = _BODY_INSURANCE_MULTIPLIER.get(vehicle["body_type"].lower(), 1.0)
-    luxury_multiplier = 1.18 if vehicle["make"].lower() in _LUXURY_MAKES else 1.0
+    luxury_multiplier = 1.18 if vehicle["make"].lower() in LUXURY_MAKES else 1.0
 
     safety_rating = int(vehicle.get("safety_rating", 3) or 3)
     safety_multiplier = max(0.78, 1.0 - (max(0, safety_rating - 3) * 0.05))

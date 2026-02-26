@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sqlite3
 import threading
@@ -32,6 +33,8 @@ from cip_protocol.engagement.scoring import (
 from cip_protocol.engagement.scoring import (
     recency_multiplier as _cip_recency_multiplier,
 )
+
+logger = logging.getLogger(__name__)
 
 # 32 public fields that every vehicle dict must expose (no internal metadata).
 VEHICLE_FIELDS = (
@@ -537,6 +540,7 @@ class SqliteVehicleStore:
                 parsed = json.loads(raw_features)
                 d["features"] = parsed if isinstance(parsed, list) else []
             except (TypeError, json.JSONDecodeError):
+                logger.warning("Corrupt features JSON for vehicle %s", d.get("id", "?"))
                 d["features"] = []
         d["is_featured"] = bool(d.get("is_featured", 0))
         return d
@@ -1108,6 +1112,8 @@ class SqliteVehicleStore:
         results = []
         for row in rows:
             vehicle = self._row_to_dict(row)
+            if vehicle["latitude"] is None or vehicle["longitude"] is None:
+                continue
             dist = self.haversine_miles(
                 center_lat, center_lng,
                 vehicle["latitude"], vehicle["longitude"],
@@ -1449,52 +1455,56 @@ class SqliteVehicleStore:
                 raise ValueError(f"Vehicle {vehicle_id} not found")
             vehicle = self._row_to_dict(row)
 
-            resolved_lead_id = self._resolve_or_create_lead_profile(
-                vehicle_id=vehicle_id,
-                now_iso=now_iso,
-                lead_id=lead_id,
-                customer_id=normalized_customer_id,
-                session_id=normalized_session_id,
-                customer_name=normalized_customer_name,
-                customer_contact=normalized_customer_contact,
-                source_channel=normalized_source,
-            )
+            try:
+                resolved_lead_id = self._resolve_or_create_lead_profile(
+                    vehicle_id=vehicle_id,
+                    now_iso=now_iso,
+                    lead_id=lead_id,
+                    customer_id=normalized_customer_id,
+                    session_id=normalized_session_id,
+                    customer_name=normalized_customer_name,
+                    customer_contact=normalized_customer_contact,
+                    source_channel=normalized_source,
+                )
 
-            event_id = f"lead-{uuid.uuid4().hex[:12]}"
-            self._insert_lead_event(
-                event_id=event_id,
-                vehicle=vehicle,
-                action=action,
-                user_query=user_query,
-                created_at=now_iso,
-                lead_id=resolved_lead_id,
-                customer_id=normalized_customer_id,
-                session_id=normalized_session_id,
-                customer_name=normalized_customer_name,
-                customer_contact=normalized_customer_contact,
-                source_channel=normalized_source,
-                event_meta=resolved_event_meta,
-            )
-            self._conn.execute(
-                "UPDATE vehicles SET lead_count = lead_count + 1 WHERE id = ?",
-                (vehicle_id,),
-            )
+                event_id = f"lead-{uuid.uuid4().hex[:12]}"
+                self._insert_lead_event(
+                    event_id=event_id,
+                    vehicle=vehicle,
+                    action=action,
+                    user_query=user_query,
+                    created_at=now_iso,
+                    lead_id=resolved_lead_id,
+                    customer_id=normalized_customer_id,
+                    session_id=normalized_session_id,
+                    customer_name=normalized_customer_name,
+                    customer_contact=normalized_customer_contact,
+                    source_channel=normalized_source,
+                    event_meta=resolved_event_meta,
+                )
+                self._conn.execute(
+                    "UPDATE vehicles SET lead_count = lead_count + 1 WHERE id = ?",
+                    (vehicle_id,),
+                )
 
-            score = self._compute_lead_score(lead_id=resolved_lead_id, now_dt=now_dt)
-            existing_profile = self._conn.execute(
-                "SELECT status FROM lead_profiles WHERE id = ?",
-                (resolved_lead_id,),
-            ).fetchone()
-            existing_status = existing_profile["status"] if existing_profile else "new"
-            next_status = _cip_infer_lead_status(score, existing_status, AUTO_SCORING_CONFIG)
+                score = self._compute_lead_score(lead_id=resolved_lead_id, now_dt=now_dt)
+                existing_profile = self._conn.execute(
+                    "SELECT status FROM lead_profiles WHERE id = ?",
+                    (resolved_lead_id,),
+                ).fetchone()
+                existing_status = existing_profile["status"] if existing_profile else "new"
+                next_status = _cip_infer_lead_status(score, existing_status, AUTO_SCORING_CONFIG)
 
-            self._conn.execute(
-                """UPDATE lead_profiles
-                   SET score = ?, status = ?, last_activity_at = ?, last_vehicle_id = ?
-                   WHERE id = ?""",
-                (score, next_status, now_iso, vehicle_id, resolved_lead_id),
-            )
-            self._conn.commit()
+                self._conn.execute(
+                    """UPDATE lead_profiles
+                       SET score = ?, status = ?, last_activity_at = ?, last_vehicle_id = ?
+                       WHERE id = ?""",
+                    (score, next_status, now_iso, vehicle_id, resolved_lead_id),
+                )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
             # Escalation detection — fire if a threshold was crossed.
             if self._escalation_store is not None and existing_status != next_status:
@@ -1701,6 +1711,7 @@ class SqliteVehicleStore:
                 if isinstance(loaded_meta, dict):
                     event_meta = loaded_meta
             except json.JSONDecodeError:
+                logger.warning("Corrupt event_meta JSON for event %s", event.get("id", "?"))
                 event_meta = {}
 
             timeline.append(

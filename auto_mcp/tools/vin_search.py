@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from cip_protocol import CIP
 
+from auto_mcp.constants import VIN_RE
 from auto_mcp.data.inventory import get_vehicle_by_vin
 from auto_mcp.tools.orchestration import run_tool_with_orchestration
-
-_VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$", re.IGNORECASE)
 
 
 async def search_by_vin_impl(
@@ -24,7 +22,7 @@ async def search_by_vin_impl(
 ) -> str:
     """Look up a vehicle by VIN and return CIP-formatted results."""
     vin = vin.strip().upper()
-    if not _VIN_RE.match(vin):
+    if not VIN_RE.match(vin):
         return (
             f"Invalid VIN '{vin}'. A VIN must be exactly 17 "
             "alphanumeric characters (no I, O, Q)."

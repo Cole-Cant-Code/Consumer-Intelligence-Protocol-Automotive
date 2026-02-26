@@ -9,12 +9,15 @@ hardcoded list.
 from __future__ import annotations
 
 import os
+import threading
 from typing import Any
 
 from auto_mcp.data.store import SqliteVehicleStore, VehicleStore, ZipCodeDatabase
 
 _store: VehicleStore | None = None
+_store_lock = threading.Lock()
 _zip_db: ZipCodeDatabase | None = None
+_zip_db_lock = threading.Lock()
 
 _DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "inventory.db")
 
@@ -22,7 +25,11 @@ _DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "inventory.db")
 def get_store() -> VehicleStore:
     """Return the active VehicleStore singleton, creating + seeding if needed."""
     global _store  # noqa: PLW0603
-    if _store is None:
+    if _store is not None:
+        return _store
+    with _store_lock:
+        if _store is not None:
+            return _store
         db_path = os.environ.get("AUTOCIP_DB_PATH", _DEFAULT_DB_PATH)
         store = SqliteVehicleStore(db_path)
         if store.count() == 0:
@@ -41,7 +48,11 @@ def set_store(store: VehicleStore | None) -> None:
 def get_zip_database() -> ZipCodeDatabase:
     """Return the ZipCodeDatabase singleton."""
     global _zip_db  # noqa: PLW0603
-    if _zip_db is None:
+    if _zip_db is not None:
+        return _zip_db
+    with _zip_db_lock:
+        if _zip_db is not None:
+            return _zip_db
         _zip_db = ZipCodeDatabase()
     return _zip_db
 
