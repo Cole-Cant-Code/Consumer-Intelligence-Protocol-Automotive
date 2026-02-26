@@ -159,7 +159,7 @@ async def test_search_listings_reads_records_key():
 
 
 @pytest.mark.asyncio
-async def test_search_listings_sends_compat_query_params():
+async def test_search_listings_sends_v2_query_params():
     captured_params = {}
 
     class _CaptureSession:
@@ -179,11 +179,11 @@ async def test_search_listings_sends_compat_query_params():
 
     assert captured_params.get("zip") == "78701"
     assert captured_params.get("distance") == "25"
-    assert captured_params.get("radius") == "25"
     assert captured_params.get("vehicle.make") == "Toyota"
-    assert captured_params.get("make") == "Toyota"
     assert captured_params.get("vehicle.model") == "Camry"
-    assert captured_params.get("model") == "Camry"
+    assert "radius" not in captured_params
+    assert "make" not in captured_params
+    assert "model" not in captured_params
 
 
 # ── Shared normalization module tests ────────────────────────────

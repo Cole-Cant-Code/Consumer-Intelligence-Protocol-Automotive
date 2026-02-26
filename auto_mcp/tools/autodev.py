@@ -108,6 +108,12 @@ def _summarize_overview(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_listing_records(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    data = payload.get("data")
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    if isinstance(data, dict):
+        return [data]
+
     records = payload.get("records")
     if isinstance(records, list):
         return [r for r in records if isinstance(r, dict)]
@@ -142,10 +148,24 @@ def _compact_listing(record: dict[str, Any]) -> dict[str, Any]:
         "model": record.get("model") or vehicle.get("model"),
         "trim": record.get("trim") or vehicle.get("trim"),
         "price": record.get("price") or listing.get("price"),
-        "mileage": record.get("mileage") or listing.get("mileage"),
-        "dealer_name": dealer.get("name") or record.get("dealerName"),
-        "dealer_zip": dealer.get("zip") or record.get("zip"),
-        "vdp_url": listing.get("vdpUrl") or record.get("vdpUrl"),
+        "mileage": (
+            record.get("mileage")
+            or listing.get("mileage")
+            or listing.get("miles")
+            or vehicle.get("mileage")
+        ),
+        "dealer_name": (
+            dealer.get("name")
+            or listing.get("dealer")
+            or record.get("dealerName")
+            or record.get("dealer")
+        ),
+        "dealer_zip": (
+            dealer.get("zip")
+            or listing.get("zip")
+            or record.get("zip")
+        ),
+        "vdp_url": listing.get("vdp") or listing.get("vdpUrl") or record.get("vdpUrl"),
     }
 
 
