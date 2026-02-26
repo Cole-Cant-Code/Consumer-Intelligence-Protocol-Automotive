@@ -201,10 +201,16 @@ class AutoDevClient:
         if zip_code:
             params["zip"] = zip_code
             params["distance"] = str(distance_miles)
+            # Backward-compatible alias used by older Auto.dev query patterns.
+            params["radius"] = str(distance_miles)
         if make:
-            params["vehicle.make"] = make.strip()
+            normalized_make = make.strip()
+            params["vehicle.make"] = normalized_make
+            params["make"] = normalized_make
         if model:
-            params["vehicle.model"] = model.strip()
+            normalized_model = model.strip()
+            params["vehicle.model"] = normalized_model
+            params["model"] = normalized_model
 
         data = await self._request("/listings", params=params)
         return data if isinstance(data, dict) else {"data": data}

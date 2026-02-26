@@ -79,6 +79,10 @@ def _resolve_vin_from_vehicle(vehicle_id: str) -> tuple[str | None, str | None]:
 
 def _summarize_overview(payload: dict[str, Any]) -> dict[str, Any]:
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    api = payload.get("api") if isinstance(payload.get("api"), dict) else {}
+    discover = (
+        payload.get("discover") if isinstance(payload.get("discover"), dict) else {}
+    )
     subscription = (
         user.get("subscription") if isinstance(user.get("subscription"), dict) else {}
     )
@@ -96,6 +100,10 @@ def _summarize_overview(payload: dict[str, Any]) -> dict[str, Any]:
         or usage.get("used")
         or user.get("apiCallsUsed"),
         "cost_this_month": usage.get("costThisMonth") or user.get("costThisMonth"),
+        "api_name": api.get("name", ""),
+        "docs_url": api.get("docs") or "",
+        "login_url": api.get("login") or "",
+        "discovery_endpoint_count": len(discover),
     }
 
 
@@ -327,6 +335,7 @@ async def get_autodev_listings_impl(
         )
 
     normalized_vin: str | None = None
+    resolution_note = ""
     if vin:
         normalized_vin, vin_error = _normalize_vin(vin)
         if vin_error:
@@ -335,6 +344,17 @@ async def get_autodev_listings_impl(
                 raw=raw,
                 code="INVALID_INPUT",
                 message=vin_error,
+            )
+        ignored_parts: list[str] = []
+        if zip_code.strip():
+            ignored_parts.append(f"zip_code={zip_code.strip()}")
+        if make:
+            ignored_parts.append(f"make={make}")
+        if model:
+            ignored_parts.append(f"model={model}")
+        if ignored_parts:
+            resolution_note = (
+                f"Resolved by VIN {normalized_vin}; {', '.join(ignored_parts)} ignored."
             )
     elif not zip_code.strip():
         return _format_error(
@@ -386,6 +406,8 @@ async def get_autodev_listings_impl(
         "autodev_listings_raw": payload,
         "data_source": "Auto.dev listings endpoint (api.auto.dev/listings)",
     }
+    if resolution_note:
+        data_context["resolution_note"] = resolution_note
     return await run_tool_with_orchestration(
         cip,
         user_input=user_input,

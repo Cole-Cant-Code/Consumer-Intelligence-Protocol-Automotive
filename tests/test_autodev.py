@@ -117,6 +117,7 @@ class TestAutoDevToolImpls:
             )
             assert isinstance(result, str)
             instance.get_listing_by_vin.assert_called_once_with("1HGCV1F39NA000001")
+            instance.search_listings_raw.assert_not_called()
 
     async def test_listings_requires_zip_or_vin(self, mock_cip: CIP):
         result = await get_autodev_listings_impl(mock_cip)

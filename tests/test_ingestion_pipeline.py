@@ -158,6 +158,34 @@ async def test_search_listings_reads_records_key():
     assert listings == [{"vin": "abc"}]
 
 
+@pytest.mark.asyncio
+async def test_search_listings_sends_compat_query_params():
+    captured_params = {}
+
+    class _CaptureSession:
+        def get(self, _url, *, params=None, **_kwargs):
+            captured_params.update(params or {})
+            return _FakeResponse({"records": []})
+
+    client = AutoDevClient("test-key")
+    client.session = _CaptureSession()
+
+    await client.search_listings(
+        zip_code="78701",
+        distance_miles=25,
+        make="Toyota",
+        model="Camry",
+    )
+
+    assert captured_params.get("zip") == "78701"
+    assert captured_params.get("distance") == "25"
+    assert captured_params.get("radius") == "25"
+    assert captured_params.get("vehicle.make") == "Toyota"
+    assert captured_params.get("make") == "Toyota"
+    assert captured_params.get("vehicle.model") == "Camry"
+    assert captured_params.get("model") == "Camry"
+
+
 # ── Shared normalization module tests ────────────────────────────
 
 
