@@ -74,6 +74,8 @@ The result: 52 tools, 35 reasoning frameworks, and a guardrail system that runs 
 
 **Two LLMs are in play.** The outer LLM (in your chat) holds the full conversation and orchestrates. The inner LLM (the specialist) is a domain expert briefed per-task by a scaffold — it knows cars and financing deeply but has no memory between calls. The outer LLM decides *what* to ask; the specialist decides *how* to answer it.
 
+> **[Interactive architecture map](docs/architecture-map.html)** — open `docs/architecture-map.html` in a browser for a zoomable, expandable visualization of the full system: all 52 tools, 35 scaffolds, guardrails, lead funnel, and orchestration overrides.
+
 ---
 
 ## Tools

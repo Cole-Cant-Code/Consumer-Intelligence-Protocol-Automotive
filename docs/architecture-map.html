@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AutoCIP — System Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #markmap { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    background: #0a0a0f;
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  }
+  svg.markmap {
+    width: 100%;
+    height: 100%;
+    --markmap-text-color: #e0e0e8;
+    --markmap-circle-open-bg: #1a1a2e;
+    --markmap-code-bg: #16162a;
+    --markmap-code-color: #7fdbca;
+    --markmap-a-color: #82aaff;
+    --markmap-font: 400 14px/18px 'SF Mono', 'Fira Code', monospace;
+    --markmap-max-width: 640px;
+    font: var(--markmap-font);
+    color: var(--markmap-text-color);
+  }
+  .markmap-link { fill: none; }
+  .markmap-node > circle { cursor: pointer; }
+  .markmap-foreign { display: inline-block; }
+  .markmap-foreign p { margin: 0; }
+  .markmap-foreign a { color: var(--markmap-a-color); }
+  .markmap-foreign code {
+    padding: .2em .4em;
+    font-size: calc(1em - 1px);
+    color: var(--markmap-code-color);
+    background: var(--markmap-code-bg);
+    border-radius: 3px;
+  }
+  .markmap-foreign strong { font-weight: 700; color: #c3e88d; }
+  .markmap-foreign em { font-style: italic; color: #c792ea; }
+  .markmap-foreign del { text-decoration: line-through; color: #ff5572; }
+  .markmap-foreign > div { width: var(--markmap-max-width); text-align: left; }
+  .markmap-foreign > div > div { display: inline-block; }
+
+  #controls {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 100;
+    display: flex;
+    gap: 8px;
+  }
+  #controls button {
+    background: rgba(26, 26, 46, 0.9);
+    border: 1px solid rgba(130, 170, 255, 0.25);
+    color: #82aaff;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s;
+  }
+  #controls button:hover {
+    background: rgba(130, 170, 255, 0.15);
+    border-color: rgba(130, 170, 255, 0.5);
+  }
+  #title-badge {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    z-index: 100;
+    background: rgba(26, 26, 46, 0.85);
+    border: 1px solid rgba(130, 170, 255, 0.2);
+    padding: 10px 18px;
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+    font-family: inherit;
+    font-size: 11px;
+    color: #6a6a8e;
+    letter-spacing: 0.5px;
+  }
+  #title-badge span { color: #c3e88d; font-weight: 600; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-view@0.15.4"></script>
+<script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.15.4"></script>
+</head>
+<body>
+
+<div id="controls">
+  <button onclick="mm.fit()">Fit</button>
+  <button onclick="mm.rescale(1.3)">+ Zoom</button>
+  <button onclick="mm.rescale(0.7)">- Zoom</button>
+  <button onclick="expandAll()">Expand All</button>
+  <button onclick="collapseAll()">Collapse All</button>
+</div>
+
+<div id="title-badge">
+  <span>AutoCIP</span> · Consumer Intelligence Protocol — Automotive · 52 Tools · 35 Scaffolds · MCP
+</div>
+
+<svg id="markmap"></svg>
+
+<script>
+function setExpand(node, level, maxLevel) {
+  if (!node) return;
+  node.payload = node.payload || {};
+  node.payload.fold = level >= maxLevel ? 1 : 0;
+  if (node.children) node.children.forEach(c => setExpand(c, level + 1, maxLevel));
+}
+function expandAll() {
+  setExpand(root, 0, 999);
+  mm.setData(root);
+  setTimeout(() => mm.fit(), 200);
+}
+function collapseAll() {
+  setExpand(root, 0, 2);
+  mm.setData(root);
+  setTimeout(() => mm.fit(), 200);
+}
+
+const md = `
+# **AutoCIP**
+
+## Architecture: Two-LLM Orchestration
+### Outer LLM (Claude / GPT)
+- Holds **full conversation context**
+- Decides *what* to ask the specialist
+- Can **override** scaffold, policy, provider per call
+- Passes \`context_notes\` for cross-domain reasoning
+### Inner Specialist LLM
+- **Domain expert** briefed per-task by scaffold
+- **No memory** between calls — stateless by design
+- Powered by \`claude-sonnet-4-6\` or \`gpt-4o\`
+- Responses shaped by YAML reasoning framework
+### Data Layer
+- **SQLite (WAL)**: vehicles, leads, lead_profiles, sales, ingestion_log
+- **In-memory**: customer journey state (saves, favorites, reservations)
+- **Ingestion pipeline**: Auto.dev + NHTSA VIN decode + field normalization
+### Protocol Layer
+- Consumes **CIP** (Customer Intelligence Protocol) for scoring + orchestration
+- Never imports mantic-thinking directly — all detection flows through CIP adapter
+- CIP provides: scaffold engine, provider pool, guardrail framework
+
+## Tool Taxonomy (52 Tools across 10 Categories)
+### Shopper Tools (17)
+- \`search_vehicles\` — Filter by make/model/year/price/body/fuel
+- \`search_by_location\` — Geo search within ZIP radius
+- \`search_by_vin\` — 17-char VIN lookup
+- \`get_vehicle_details\` — Full specs
+- \`compare_vehicles\` — Side-by-side (2-3 vehicles)
+- \`get_similar_vehicles\` — Alternatives, lower-price bias
+- \`get_vehicle_history\` — Title, accidents, ownership, recalls
+- \`get_market_price_context\` — Deal quality assessment
+- \`estimate_financing\` — Single-scenario payment
+- \`compare_financing_scenarios\` — Down payment x term matrix
+- \`estimate_trade_in\` — Value by year/make/model/mileage/condition
+- \`estimate_out_the_door_price\` — Taxes + title + reg + doc fees
+- \`estimate_cost_of_ownership\` — Fuel + maintenance + insurance
+- \`estimate_insurance\` — Cost range for vehicle + driver profile
+- \`get_warranty_info\` — Coverage windows
+- \`check_availability\` — Stock check + dealer info
+- \`assess_purchase_readiness\` — Budget/financing/trade-in status
+### Auto.dev Tools (4)
+- \`get_autodev_overview\` — Account and API usage context
+- \`get_autodev_vin_decode\` — VIN decode via Auto.dev
+- \`get_autodev_listings\` — Listings by VIN or search filters (ZIP/distance/make/model/price)
+- \`get_autodev_vehicle_photos\` — Photo assets by VIN or inventory ID
+### Orchestration Resources (3)
+- \`autocip://orchestration/entry\` — Orchestration entry guidance with scaffold catalog
+- \`autocip://scaffolds/catalog\` — Scaffold IDs and routing hints
+- \`orchestration_entry_prompt\` — Prompt-formatted briefing and catalog
+### NHTSA Safety Tools (3)
+- \`get_nhtsa_recalls\` — Recall data by VIN, make/model/year, or vehicle ID
+- \`get_nhtsa_complaints\` — Consumer complaints
+- \`get_nhtsa_safety_ratings\` — Crash test safety ratings
+### Engagement Tools (10)
+- \`save_search\` / \`list_saved_searches\`
+- \`save_favorite\` / \`list_favorites\`
+- \`reserve_vehicle\` — Soft hold (48h default)
+- \`contact_dealer\` — Send question to listing dealer
+- \`submit_purchase_deposit\` — Deposit + paperwork intake
+- \`schedule_test_drive\` / \`schedule_service\` / \`request_follow_up\`
+### Dealer Intelligence Tools (8)
+- \`get_hot_leads\` — Ranked by engagement score
+- \`get_lead_detail\` — Full timeline + score breakdown
+- \`get_lead_analytics\` — Engagement over period
+- \`get_inventory_aging_report\` — Stale units by days-on-lot
+- \`get_pricing_opportunities\` — Over/under-priced + aging
+- \`get_funnel_metrics\` — View to sale conversion, source breakdown
+- \`get_inventory_stats\` — Aggregate coverage + pricing + freshness
+- \`record_sale\` — Close the funnel loop
+### Escalation Tools (2)
+- \`get_escalations\` — Threshold-crossing alerts
+- \`acknowledge_escalation\` — Mark delivered
+### Data Management Tools (6)
+- \`upsert_vehicle\` / \`bulk_upsert_vehicles\`
+- \`remove_vehicle\` / \`expire_stale_listings\`
+- \`record_lead\` — With identity stitching
+- \`bulk_import_from_api\` — Auto.dev ingestion
+### Provider Tools (2)
+- \`set_llm_provider\` — Switch \`anthropic\` / \`openai\` at runtime
+- \`get_llm_provider\` — Current provider + model + pool state
+
+## Scaffold Engine (35 YAML Reasoning Frameworks)
+### What a Scaffold Is
+- **Not a prompt template** — a structured reasoning framework
+- Shapes *how the specialist thinks*, not just what it returns
+- Contains: \`framing\`, \`reasoning_framework\`, \`output_calibration\`, \`guardrails\`
+### Scaffold Anatomy
+- **framing.role** — Specialist persona + tone
+- **reasoning_framework.steps** — Ordered cognitive steps
+- **output_calibration.must_include** — Required output elements
+- **output_calibration.never_include** — Forbidden output elements
+- **guardrails.disclaimers** — Auto-appended disclaimers
+- **guardrails.prohibited_actions** — Hard constraints
+### Shopper Scaffolds (11)
+- \`vehicle_search\` · \`vehicle_details\` · \`vehicle_comparison\`
+- \`vehicle_history\` · \`similar_vehicles\` · \`vin_lookup\`
+- \`location_search\` · \`availability_check\`
+- \`market_price_context\` · \`warranty_info\` · \`general_advice\`
+### Financial Scaffolds (7)
+- \`financing_overview\` — Single-scenario, estimate framing
+- \`financing_scenarios\` — Multi-scenario comparison matrix
+- \`trade_in_estimate\` · \`out_the_door_price\`
+- \`ownership_cost\` · \`insurance_estimate\`
+- \`purchase_readiness\` — Buyer readiness assessment
+### Dealer Scaffolds (5)
+- \`vehicle_search_dealer\` · \`vehicle_details_dealer\`
+- \`vehicle_comparison_dealer\` · \`availability_check_dealer\`
+- \`market_price_context_dealer\` — Pricing positioning for pros
+### Intelligence Scaffolds (8)
+- \`lead_hotlist\` · \`lead_detail\` · \`lead_analytics\`
+- \`lead_escalation\` — Real-time threshold alerts
+- \`inventory_aging_report\` · \`inventory_stats\`
+- \`pricing_opportunities\` · \`funnel_metrics\`
+### External Data Scaffolds (3)
+- \`autodev_data\` — Auto.dev overview, VIN, listings, photos framing
+- \`nhtsa_safety\` — Recalls, complaints, safety ratings presentation
+- \`orchestration_entry\` — Pre-tool orchestration assessment
+### Meta Scaffolds (1)
+- \`test_drive_schedule\` — Booking context
+
+## Guardrail System (Post-Generation Enforcement)
+### Blocked by Design
+- ~~Purchase pressure~~ — *"you should definitely buy this"*
+- ~~Financing guarantees~~ — *"your APR will be 4.5%"*
+- ~~Legal advice~~ — *"legally you should..."*
+- ~~Mechanical promises~~ — *"this engine will last 200k miles"*
+### Enforcement Mechanisms
+- **Regex policies** catch APR promises + credit score diagnoses
+- **Blocklist patterns** in \`config.py\` (DomainConfig)
+- **Post-generation redaction**: \`[Removed: contains prohibited automotive advice]\`
+- **Disclaimers auto-appended** where scaffold requires them
+### Design Philosophy
+- Guardrails run **after** generation, not just in the prompt
+- Prompt-level safety + post-generation enforcement = defense in depth
+- Financial outputs **always** framed as estimates, never promises
+- Scaffold \`output_calibration\` prevents biased recommendations
+
+## Lead Intelligence and Funnel
+### Engagement Scoring Weights
+- Viewed listing: **1.0** · Compared: **3.0**
+- Contacted dealer: **4.0** · Checked availability: **5.0**
+- Ran financing: **6.0** · Scheduled test drive: **8.0**
+- Reserved vehicle: **9.0** · Submitted deposit: **10.0**
+### Identity Stitching
+- Cross-session via \`lead_id\`, \`customer_id\`, \`session_id\`
+- Profiles accumulate engagement across touchpoints
+- Deduplication prevents double-counting same events
+### Funnel Stages
+- **Discovery** → **Consideration** → **Financial** → **Intent** → **Outcome**
+### Escalation Engine
+- Cold → Warm at score **10** · Warm → Hot at score **22**
+- **Synchronous** inside \`record_lead()\` — no polling, no background threads
+- Stored, **deduplicated**, surfaced via \`get_escalations\`
+
+## Orchestration Overrides
+### Per-Call Control Parameters
+- \`provider\` — Route to \`anthropic\` or \`openai\` for this call
+- \`scaffold_id\` — Override auto-selected scaffold
+- \`policy\` — Inject constraint the specialist must follow
+- \`context_notes\` — Cross-domain context from outer LLM
+- \`raw\` — Bypass specialist entirely → structured JSON
+### What This Enables
+- **Switch reasoning frameworks** mid-conversation
+- **Inject situational context** the specialist wouldn't have
+- **Drop to raw data** when outer LLM needs to compute itself
+- **A/B provider routing** for quality comparison
+
+## Deployment and Stack
+### Runtime
+- **Python 3.11+** · FastMCP server
+- **SQLite (WAL mode)** — vehicles, leads, sales, ingestion_log
+- **uv** package manager · 415 tests
+### Providers
+- **Default**: Anthropic (\`claude-sonnet-4-6\`)
+- **Alternative**: OpenAI (\`gpt-4o\`)
+- **Hot-swappable** at runtime via \`set_llm_provider\`
+### Integration
+- **Claude Desktop** — \`claude_desktop_config.json\`
+- **Claude Code CLI** — \`claude mcp add-json\`
+- **Any MCP client** — standard SSE/stdio transport
+### License
+- **BUSL 1.1** → converts to **Apache 2.0** after 4 years
+`;
+
+const { Transformer } = markmap;
+const transformer = new Transformer();
+const { root } = transformer.transform(md);
+
+const { Markmap } = markmap;
+const mm = Markmap.create('#markmap', {
+  colorFreezeLevel: 2,
+  duration: 400,
+  maxWidth: 640,
+  initialExpandLevel: 2,
+  zoom: true,
+  pan: true,
+  fitRatio: 0.85,
+  paddingX: 20,
+  color: (node) => {
+    const palette = [
+      '#82aaff', '#c3e88d', '#c792ea', '#f78c6c',
+      '#ff5572', '#89ddff', '#ffcb6b', '#7fdbca',
+      '#bb80b3', '#f07178', '#80cbc4', '#ffeb95'
+    ];
+    const depth = node.state?.depth ?? 0;
+    const idx = node.state?.id ?? 0;
+    return palette[(depth + idx) % palette.length];
+  }
+}, root);
+
+window.mm = mm;
+window.root = root;
+setTimeout(() => mm.fit(), 300);
+</script>
+</body>
+</html>
