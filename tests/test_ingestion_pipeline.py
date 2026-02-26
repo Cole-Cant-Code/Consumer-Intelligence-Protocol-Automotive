@@ -5,6 +5,16 @@ from __future__ import annotations
 import pytest
 
 from auto_mcp.ingestion.pipeline import AutoDevClient, normalize_auto_dev_listing
+from auto_mcp.normalization import (
+    BODY_TYPE_MAP,
+    FUEL_TYPE_MAP,
+    clean_numeric_string,
+    normalize_body_type,
+    normalize_fuel_type,
+    parse_float,
+    parse_int,
+    parse_price,
+)
 
 
 class _FakeResponse:
@@ -146,3 +156,100 @@ async def test_search_listings_reads_records_key():
 
     listings = await client.search_listings(zip_code="78701")
     assert listings == [{"vin": "abc"}]
+
+
+# ── Shared normalization module tests ────────────────────────────
+
+
+class TestCanonicalNormalization:
+    """Tests for the shared normalization module (auto_mcp.normalization)."""
+
+    def test_clean_numeric_string_strips_non_numeric(self):
+        assert clean_numeric_string("$12,345.67") == "12345.67"
+        assert clean_numeric_string("abc") == ""
+        assert clean_numeric_string("-3.14") == "-3.14"
+
+    def test_parse_price_returns_none_for_unparseable(self):
+        assert parse_price(None) is None
+        assert parse_price(True) is None
+        assert parse_price("") is None
+        assert parse_price("abc") is None
+
+    def test_parse_price_handles_valid_inputs(self):
+        assert parse_price(100) == 100.0
+        assert parse_price(99.5) == 99.5
+        assert parse_price("$12,345") == 12345.0
+        assert parse_price("0") == 0.0
+
+    def test_parse_int_returns_none_for_unparseable(self):
+        assert parse_int(None) is None
+        assert parse_int(True) is None
+        assert parse_int("") is None
+        assert parse_int("abc") is None
+
+    def test_parse_int_handles_valid_inputs(self):
+        assert parse_int(42) == 42
+        assert parse_int(3.9) == 3
+        assert parse_int("100") == 100
+
+    def test_parse_float_returns_none_for_unparseable(self):
+        assert parse_float(None) is None
+        assert parse_float(True) is None
+        assert parse_float("") is None
+        assert parse_float("not_a_number") is None
+
+    def test_parse_float_handles_valid_inputs(self):
+        assert parse_float(3) == 3.0
+        assert parse_float(-97.7431) == -97.7431
+        assert parse_float("-97.7431") == -97.7431
+
+    def test_normalize_body_type_empty_returns_empty(self):
+        assert normalize_body_type(None) == ""
+        assert normalize_body_type("") == ""
+
+    def test_normalize_body_type_maps_correctly(self):
+        assert normalize_body_type("Sedan") == "sedan"
+        assert normalize_body_type("CROSSOVER") == "suv"
+        assert normalize_body_type("pickup") == "truck"
+
+    def test_normalize_body_type_passes_through_unknown(self):
+        assert normalize_body_type("Roadster") == "roadster"
+
+    def test_normalize_fuel_type_empty_returns_empty(self):
+        assert normalize_fuel_type(None) == ""
+        assert normalize_fuel_type("") == ""
+
+    def test_normalize_fuel_type_maps_correctly(self):
+        assert normalize_fuel_type("Gasoline") == "gasoline"
+        assert normalize_fuel_type("Plug-In Hybrid") == "hybrid"
+        assert normalize_fuel_type("FLEX FUEL") == "gasoline"
+
+    def test_normalize_fuel_type_passes_through_unknown(self):
+        assert normalize_fuel_type("Hydrogen") == "hydrogen"
+
+    def test_body_type_map_all_lowercase_keys(self):
+        for key in BODY_TYPE_MAP:
+            assert key == key.lower()
+
+    def test_fuel_type_map_all_lowercase_keys(self):
+        for key in FUEL_TYPE_MAP:
+            assert key == key.lower()
+
+    def test_pipeline_wrappers_preserve_defaults(self):
+        """Pipeline's local wrappers should still produce 0/0.0/'other'/'gasoline'."""
+        from auto_mcp.ingestion.pipeline import (
+            normalize_body_type as pipe_body,
+        )
+        from auto_mcp.ingestion.pipeline import (
+            normalize_fuel_type as pipe_fuel,
+        )
+        from auto_mcp.ingestion.pipeline import (
+            parse_int as pipe_int,
+        )
+        from auto_mcp.ingestion.pipeline import (
+            parse_price as pipe_price,
+        )
+        assert pipe_body(None) == "other"
+        assert pipe_fuel(None) == "gasoline"
+        assert pipe_int(None) == 0
+        assert pipe_price(None) == 0.0

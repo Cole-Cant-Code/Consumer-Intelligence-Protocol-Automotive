@@ -54,6 +54,11 @@ def get_vehicle(vehicle_id: str) -> dict[str, Any] | None:
     return get_store().get(vehicle_id)
 
 
+def get_vehicles(vehicle_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch multiple vehicles in one query. Returns results in input order, skips missing."""
+    return get_store().get_many(vehicle_ids)
+
+
 def get_vehicle_by_vin(vin: str) -> dict[str, Any] | None:
     """Look up a single vehicle by VIN. Returns None if not found."""
     return get_store().get_by_vin(vin)

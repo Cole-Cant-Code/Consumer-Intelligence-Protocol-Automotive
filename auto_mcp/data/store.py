@@ -160,6 +160,7 @@ class VehicleStore(Protocol):
     """Minimal interface for vehicle persistence."""
 
     def get(self, vehicle_id: str) -> dict[str, Any] | None: ...
+    def get_many(self, vehicle_ids: list[str]) -> list[dict[str, Any]]: ...
     def get_by_vin(self, vin: str) -> dict[str, Any] | None: ...
     def search(
         self,
@@ -949,6 +950,21 @@ class SqliteVehicleStore:
                 (vehicle_id, *_ARCHIVED_STATUSES),
             ).fetchone()
         return self._row_to_dict(row) if row else None
+
+    def get_many(self, vehicle_ids: list[str]) -> list[dict[str, Any]]:
+        """Fetch multiple vehicles in one query.  Returns results in input order, skips missing."""
+        if not vehicle_ids:
+            return []
+        placeholders = ", ".join("?" for _ in vehicle_ids)
+        with self._lock:
+            rows = self._conn.execute(
+                f"""SELECT {PUBLIC_COLUMNS} FROM vehicles
+                    WHERE id IN ({placeholders})
+                    AND availability_status NOT IN (?, ?)""",
+                (*vehicle_ids, *_ARCHIVED_STATUSES),
+            ).fetchall()
+        by_id = {row["id"]: self._row_to_dict(row) for row in rows}
+        return [by_id[vid] for vid in vehicle_ids if vid in by_id]
 
     def get_by_vin(self, vin: str) -> dict[str, Any] | None:
         with self._lock:

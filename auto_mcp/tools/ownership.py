@@ -40,6 +40,13 @@ _LUXURY_MAKES = {
     "volvo",
 }
 
+_ESTIMATE_DISCLAIMER = (
+    "These figures are estimates for informational purposes only and do not "
+    "constitute financial advice. Actual costs may vary based on individual "
+    "circumstances, market conditions, and lender terms. Consult a qualified "
+    "financial advisor before making purchasing decisions."
+)
+
 
 def _estimate_insurance_range(
     *,
@@ -99,10 +106,23 @@ def _estimate_insurance_range(
     }
 
 
-def _combined_efficiency(vehicle: dict[str, Any]) -> float:
-    city = max(1.0, float(vehicle.get("mpg_city", 0) or 0))
-    highway = max(1.0, float(vehicle.get("mpg_highway", 0) or 0))
-    return max(1.0, (city + highway) / 2)
+def _combined_efficiency(vehicle: dict[str, Any]) -> tuple[float, bool]:
+    """Return (combined_mpg, is_estimated).
+
+    When both city and highway are 0 (missing data), fall back to a
+    conservative national-average estimate and flag it.
+    """
+    city = max(0.0, float(vehicle.get("mpg_city", 0) or 0))
+    highway = max(0.0, float(vehicle.get("mpg_highway", 0) or 0))
+    is_electric = vehicle.get("fuel_type", "").lower() == "electric"
+
+    if city == 0 and highway == 0:
+        return (100.0 if is_electric else 25.0), True
+    if city == 0:
+        return max(1.0, highway), False
+    if highway == 0:
+        return max(1.0, city), False
+    return max(1.0, (city + highway) / 2), False
 
 
 async def estimate_insurance_impl(
@@ -156,6 +176,7 @@ async def estimate_insurance_impl(
             "zip_code": zip_code,
         },
         "insurance_estimate": insurance,
+        "disclaimer": _ESTIMATE_DISCLAIMER,
     }
 
     return await run_tool_with_orchestration(
@@ -245,6 +266,7 @@ async def estimate_out_the_door_price_impl(
             "gross_out_the_door": round(gross_out_the_door, 2),
             "net_out_the_door": round(net_out_the_door, 2),
         },
+        "disclaimer": _ESTIMATE_DISCLAIMER,
     }
 
     return await run_tool_with_orchestration(
@@ -289,7 +311,7 @@ async def estimate_cost_of_ownership_impl(
         return f"Vehicle with ID '{vehicle_id}' not found in inventory."
 
     fuel_type = vehicle["fuel_type"].lower()
-    combined_efficiency = _combined_efficiency(vehicle)
+    combined_efficiency, fuel_data_estimated = _combined_efficiency(vehicle)
 
     if fuel_type == "electric":
         kwh_per_mile = 33.7 / combined_efficiency
@@ -351,6 +373,7 @@ async def estimate_cost_of_ownership_impl(
             "mpg_city": vehicle["mpg_city"],
             "mpg_highway": vehicle["mpg_highway"],
         },
+        "fuel_data_estimated": fuel_data_estimated,
         "assumptions": {
             "annual_miles": annual_miles,
             "ownership_years": ownership_years,
@@ -374,6 +397,7 @@ async def estimate_cost_of_ownership_impl(
             "projected_resale_value": round(projected_resale, 2),
             "estimated_total_cost": round(total_cost, 2),
         },
+        "disclaimer": _ESTIMATE_DISCLAIMER,
     }
 
     return await run_tool_with_orchestration(

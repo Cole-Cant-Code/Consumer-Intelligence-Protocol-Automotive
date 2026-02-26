@@ -58,7 +58,7 @@ class TestProtocolCompliance:
         assert isinstance(store, VehicleStore)
 
     def test_protocol_has_required_methods(self):
-        methods = {"get", "search", "upsert", "upsert_many", "remove", "count"}
+        methods = {"get", "get_many", "search", "upsert", "upsert_many", "remove", "count"}
         protocol_methods = {
             name for name in dir(VehicleStore)
             if not name.startswith("_") and callable(getattr(VehicleStore, name, None))
@@ -119,6 +119,29 @@ class TestCRUD:
         assert got["safety_rating"] == 0
         assert got["latitude"] is None
         assert got["longitude"] is None
+
+    def test_get_many_returns_in_order(self, store: SqliteVehicleStore):
+        vehicles = [
+            {**SAMPLE_VEHICLE, "id": f"GM-{i}", "vin": f"GETMANYVIN{i:07d}"}
+            for i in range(3)
+        ]
+        store.upsert_many(vehicles)
+        result = store.get_many(["GM-2", "GM-0", "GM-1"])
+        assert [v["id"] for v in result] == ["GM-2", "GM-0", "GM-1"]
+
+    def test_get_many_skips_missing(self, store: SqliteVehicleStore):
+        store.upsert({**SAMPLE_VEHICLE, "id": "GM-EXISTS", "vin": "GMEXISTSVIN000001"})
+        result = store.get_many(["GM-EXISTS", "GM-NOPE"])
+        assert len(result) == 1
+        assert result[0]["id"] == "GM-EXISTS"
+
+    def test_get_many_empty_input(self, store: SqliteVehicleStore):
+        assert store.get_many([]) == []
+
+    def test_get_many_excludes_archived(self, store: SqliteVehicleStore):
+        store.upsert({**SAMPLE_VEHICLE, "id": "GM-ARCH", "vin": "GMARCHVIN00000001"})
+        store.remove("GM-ARCH")
+        assert store.get_many(["GM-ARCH"]) == []
 
     def test_upsert_many_and_count(self, store: SqliteVehicleStore):
         vehicles = [

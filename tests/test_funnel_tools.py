@@ -222,3 +222,203 @@ class TestEngagementTools:
             preferred_channel="carrier_pigeon",
         )
         assert "preferred channel" in result.lower()
+
+    def test_contact_dealer_empty_dealer_name(self):
+        """Empty dealer_name should render as 'the dealer' — not blank."""
+        from auto_mcp.data.inventory import get_store
+
+        store = get_store()
+        store.upsert({
+            "id": "EMPTY-DEALER-001",
+            "year": 2024,
+            "make": "Test",
+            "model": "NoDealer",
+            "trim": "",
+            "body_type": "sedan",
+            "price": 20000,
+            "mileage": 0,
+            "exterior_color": "",
+            "interior_color": "",
+            "fuel_type": "gasoline",
+            "mpg_city": 30,
+            "mpg_highway": 40,
+            "engine": "",
+            "transmission": "",
+            "drivetrain": "",
+            "features": [],
+            "safety_rating": 5,
+            "dealer_name": "",
+            "dealer_location": "Austin, TX",
+            "availability_status": "in_stock",
+            "vin": "EMPTYDLRVIN000001",
+        })
+        result = contact_dealer_impl(
+            vehicle_id="EMPTY-DEALER-001",
+            customer_name="Pat Lee",
+            customer_contact="pat@example.com",
+            question="Is this still available?",
+        )
+        assert "the dealer" in result.lower()
+        assert "sent to  " not in result  # no double space from empty name
+
+    def test_request_follow_up_empty_dealer_name(self):
+        """Empty dealer_name in follow-up should render as 'the dealer'."""
+        from auto_mcp.data.inventory import get_store
+
+        store = get_store()
+        store.upsert({
+            "id": "EMPTY-DEALER-002",
+            "year": 2024,
+            "make": "Test",
+            "model": "NoDealer2",
+            "trim": "",
+            "body_type": "sedan",
+            "price": 20000,
+            "mileage": 0,
+            "exterior_color": "",
+            "interior_color": "",
+            "fuel_type": "gasoline",
+            "mpg_city": 30,
+            "mpg_highway": 40,
+            "engine": "",
+            "transmission": "",
+            "drivetrain": "",
+            "features": [],
+            "safety_rating": 5,
+            "dealer_name": "",
+            "dealer_location": "Austin, TX",
+            "availability_status": "in_stock",
+            "vin": "EMPTYDLRVIN000002",
+        })
+        result = request_follow_up_impl(
+            vehicle_id="EMPTY-DEALER-002",
+            customer_name="Pat Lee",
+            customer_contact="pat@example.com",
+        )
+        assert "the dealer" in result.lower()
+
+    def test_financing_intent_validation_rejects_invalid(self):
+        result = submit_purchase_deposit_impl(
+            vehicle_id="VH-001",
+            customer_name="Pat Lee",
+            customer_contact="pat@example.com",
+            deposit_amount=500,
+            financing_intent="barter",
+        )
+        assert "invalid financing intent" in result.lower()
+
+    def test_financing_intent_validation_normalizes_case(self):
+        result = submit_purchase_deposit_impl(
+            vehicle_id="VH-001",
+            customer_name="Pat Lee",
+            customer_contact="pat@example.com",
+            deposit_amount=500,
+            financing_intent="LEASE",
+        )
+        assert "deposit intake submitted" in result.lower()
+
+
+class TestZeroMpgEstimates:
+    """Zero-MPG data should use fallback estimates, not garbage values."""
+
+    async def test_cost_of_ownership_zero_mpg_flags_estimated(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        from auto_mcp.data.inventory import get_store
+
+        store = get_store()
+        store.upsert({
+            "id": "ZERO-MPG-001",
+            "year": 2024,
+            "make": "Generic",
+            "model": "NoMPG",
+            "trim": "",
+            "body_type": "sedan",
+            "price": 30000,
+            "mileage": 10000,
+            "exterior_color": "",
+            "interior_color": "",
+            "fuel_type": "gasoline",
+            "mpg_city": 0,
+            "mpg_highway": 0,
+            "engine": "2.0L",
+            "transmission": "Auto",
+            "drivetrain": "FWD",
+            "features": [],
+            "safety_rating": 4,
+            "dealer_name": "Test Dealer",
+            "dealer_location": "Austin, TX",
+            "availability_status": "in_stock",
+            "vin": "ZEROMPGVIN0000001",
+        })
+
+        from auto_mcp.tools.ownership import _combined_efficiency
+
+        vehicle = store.get("ZERO-MPG-001")
+        combined, is_estimated = _combined_efficiency(vehicle)
+        assert is_estimated is True
+        assert combined == 25.0  # gas fallback
+
+    async def test_combined_efficiency_electric_fallback(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        from auto_mcp.tools.ownership import _combined_efficiency
+
+        vehicle = {"fuel_type": "electric", "mpg_city": 0, "mpg_highway": 0}
+        combined, is_estimated = _combined_efficiency(vehicle)
+        assert is_estimated is True
+        assert combined == 100.0
+
+    async def test_combined_efficiency_partial_zero(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        from auto_mcp.tools.ownership import _combined_efficiency
+
+        vehicle = {"fuel_type": "gasoline", "mpg_city": 30, "mpg_highway": 0}
+        combined, is_estimated = _combined_efficiency(vehicle)
+        assert is_estimated is False
+        assert combined == 30.0
+
+    async def test_combined_efficiency_normal(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        from auto_mcp.tools.ownership import _combined_efficiency
+
+        vehicle = {"fuel_type": "gasoline", "mpg_city": 30, "mpg_highway": 40}
+        combined, is_estimated = _combined_efficiency(vehicle)
+        assert is_estimated is False
+        assert combined == 35.0
+
+    async def test_combined_efficiency_clamps_to_positive_floor(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        from auto_mcp.tools.ownership import _combined_efficiency
+
+        vehicle = {"fuel_type": "gasoline", "mpg_city": -30, "mpg_highway": 30}
+        combined, is_estimated = _combined_efficiency(vehicle)
+        assert is_estimated is False
+        assert combined == 30.0
+
+    async def test_combined_efficiency_all_negative_uses_fallback(
+        self, mock_cip: CIP, mock_provider: MockProvider
+    ):
+        from auto_mcp.tools.ownership import _combined_efficiency
+
+        vehicle = {"fuel_type": "gasoline", "mpg_city": -10, "mpg_highway": -5}
+        combined, is_estimated = _combined_efficiency(vehicle)
+        assert is_estimated is True
+        assert combined == 25.0
+
+
+class TestFinancialDisclaimers:
+    """All financial tool outputs must include a disclaimer."""
+
+    async def test_insurance_has_disclaimer(self, mock_cip: CIP, mock_provider: MockProvider):
+        from auto_mcp.tools.ownership import _ESTIMATE_DISCLAIMER
+
+        assert "informational purposes" in _ESTIMATE_DISCLAIMER
+
+    async def test_out_the_door_has_disclaimer(self, mock_cip: CIP, mock_provider: MockProvider):
+        from auto_mcp.tools.ownership import _ESTIMATE_DISCLAIMER
+
+        assert "financial advice" in _ESTIMATE_DISCLAIMER

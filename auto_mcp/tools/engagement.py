@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from auto_mcp.data.inventory import get_vehicle
+from auto_mcp.data.inventory import get_vehicle, get_vehicles
 from auto_mcp.data.journey import (
     contact_dealer,
     list_favorites,
@@ -109,9 +109,13 @@ def list_favorites_impl(*, customer_id: str = "guest") -> str:
     if not favorites:
         return f"No favorites found for customer '{customer_id or 'guest'}'."
 
+    vehicle_ids = [item["vehicle_id"] for item in favorites]
+    vehicles_list = get_vehicles(vehicle_ids)
+    vehicles_by_id = {v["id"]: v for v in vehicles_list}
+
     lines = [f"Favorites for '{favorites[0]['customer_id']}':"]
     for item in favorites:
-        vehicle = get_vehicle(item["vehicle_id"])
+        vehicle = vehicles_by_id.get(item["vehicle_id"])
         if vehicle is None:
             lines.append(f"- {item['vehicle_id']} (listing no longer in inventory)")
             continue
@@ -194,10 +198,14 @@ def contact_dealer_impl(
         preferred_channel=channel,
     )
 
+    dealer_name = vehicle['dealer_name'] or 'the dealer'
     return (
-        f"Message {record['id']} sent to {vehicle['dealer_name']} regarding vehicle {vehicle_id}. "
+        f"Message {record['id']} sent to {dealer_name} regarding vehicle {vehicle_id}. "
         f"Preferred reply channel: {channel}."
     )
+
+
+_VALID_FINANCING_INTENTS = {"undecided", "cash", "finance", "lease"}
 
 
 def submit_purchase_deposit_impl(
@@ -213,6 +221,13 @@ def submit_purchase_deposit_impl(
     if deposit_amount <= 0:
         return "Deposit amount must be greater than 0."
 
+    normalized_intent = financing_intent.strip().lower() if financing_intent else "undecided"
+    if normalized_intent not in _VALID_FINANCING_INTENTS:
+        return (
+            f"Invalid financing intent '{financing_intent}'. "
+            f"Must be one of: {', '.join(sorted(_VALID_FINANCING_INTENTS))}."
+        )
+
     vehicle = get_vehicle(vehicle_id)
     if vehicle is None:
         return f"Vehicle with ID '{vehicle_id}' not found in inventory."
@@ -222,7 +237,7 @@ def submit_purchase_deposit_impl(
         customer_name=customer_name,
         customer_contact=customer_contact,
         deposit_amount=deposit_amount,
-        financing_intent=financing_intent,
+        financing_intent=normalized_intent,
         paperwork_started=paperwork_started,
     )
 
@@ -296,7 +311,8 @@ def request_follow_up_impl(
         preferred_channel=channel,
     )
 
+    dealer_name = vehicle['dealer_name'] or 'the dealer'
     return (
-        f"Follow-up request {record['id']} queued with {vehicle['dealer_name']} "
+        f"Follow-up request {record['id']} queued with {dealer_name} "
         f"for topic '{cleaned_topic}' via {channel}."
     )

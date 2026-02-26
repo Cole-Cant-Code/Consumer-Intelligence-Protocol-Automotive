@@ -15,6 +15,16 @@ from auto_mcp.data.inventory import (
     record_vehicle_lead,
     remove_expired_vehicles,
 )
+from auto_mcp.normalization import (
+    BODY_TYPE_MAP,
+    FUEL_TYPE_MAP,
+    clean_numeric_string,
+    normalize_body_type,
+    normalize_fuel_type,
+    parse_float,
+    parse_int,
+    parse_price,
+)
 
 _REQUIRED_FIELDS = ("id", "year", "make", "model", "body_type", "price", "fuel_type")
 _REQUIRED_STRING_FIELDS = ("id", "make", "model", "body_type", "fuel_type")
@@ -44,28 +54,8 @@ _CANONICAL_ALIASES = {
     "url": "source_url",
 }
 
-_BODY_TYPE_MAP = {
-    "sedan": "sedan",
-    "coupe": "coupe",
-    "hatchback": "hatchback",
-    "suv": "suv",
-    "crossover": "suv",
-    "truck": "truck",
-    "pickup": "truck",
-    "van": "van",
-    "minivan": "minivan",
-    "wagon": "wagon",
-    "convertible": "convertible",
-}
-
-_FUEL_TYPE_MAP = {
-    "gasoline": "gasoline",
-    "diesel": "diesel",
-    "electric": "electric",
-    "hybrid": "hybrid",
-    "plug-in hybrid": "hybrid",
-    "flex fuel": "gasoline",
-}
+_BODY_TYPE_MAP = BODY_TYPE_MAP
+_FUEL_TYPE_MAP = FUEL_TYPE_MAP
 
 _VIN_PATTERN = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 _VIN_YEAR_CODES = "ABCDEFGHJKLMNPRSTVWXY123456789"
@@ -101,75 +91,12 @@ def _is_blank(value: Any) -> bool:
     return False
 
 
-def _clean_numeric_string(raw: str) -> str:
-    return "".join(c for c in raw if c.isdigit() or c in {".", "-"})
-
-
-def _parse_price(value: Any) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        cleaned = _clean_numeric_string(stripped)
-        if not cleaned:
-            return None
-        try:
-            return float(cleaned)
-        except ValueError:
-            return None
-    return None
-
-
-def _parse_int(value: Any) -> int | None:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        parsed = _parse_price(stripped)
-        if parsed is None:
-            return None
-        return int(parsed)
-    return None
-
-
-def _parse_float(value: Any) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return float(stripped)
-        except ValueError:
-            return None
-    return None
-
-
-def _normalize_body_type(raw: str | None) -> str:
-    if not raw:
-        return ""
-    normalized = raw.strip().lower()
-    return _BODY_TYPE_MAP.get(normalized, normalized)
-
-
-def _normalize_fuel_type(raw: str | None) -> str:
-    if not raw:
-        return ""
-    normalized = raw.strip().lower()
-    return _FUEL_TYPE_MAP.get(normalized, normalized)
+_clean_numeric_string = clean_numeric_string
+_parse_price = parse_price
+_parse_int = parse_int
+_parse_float = parse_float
+_normalize_body_type = normalize_body_type
+_normalize_fuel_type = normalize_fuel_type
 
 
 def _decode_model_year_from_vin(vin: str) -> int | None:

@@ -14,6 +14,21 @@ from typing import Any
 import aiohttp
 
 from auto_mcp.data.inventory import get_store
+from auto_mcp.normalization import (
+    normalize_body_type as _canonical_body_type,
+)
+from auto_mcp.normalization import (
+    normalize_fuel_type as _canonical_fuel_type,
+)
+from auto_mcp.normalization import (
+    parse_float,
+)
+from auto_mcp.normalization import (
+    parse_int as _canonical_parse_int,
+)
+from auto_mcp.normalization import (
+    parse_price as _canonical_parse_price,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,75 +207,21 @@ class NHTSAClient:
 
 # ── Normalization ───────────────────────────────────────────────────
 
-BODY_TYPE_MAP = {
-    "Sedan": "sedan", "Coupe": "coupe", "Hatchback": "hatchback",
-    "SUV": "suv", "Crossover": "suv", "Truck": "truck", "Pickup": "truck",
-    "Van": "van", "Minivan": "minivan", "Wagon": "wagon", "Convertible": "convertible",
-}
-
-FUEL_TYPE_MAP = {
-    "Gasoline": "gasoline", "Diesel": "diesel", "Electric": "electric",
-    "Hybrid": "hybrid", "Plug-in Hybrid": "hybrid", "Flex Fuel": "gasoline",
-}
-
-
 def normalize_body_type(raw: str | None) -> str:
-    if not raw:
-        return "other"
-    return BODY_TYPE_MAP.get(raw.strip(), raw.strip().lower())
+    return _canonical_body_type(raw) or "other"
 
 
 def normalize_fuel_type(raw: str | None) -> str:
-    if not raw:
-        return "gasoline"
-    return FUEL_TYPE_MAP.get(raw.strip(), raw.strip().lower())
+    return _canonical_fuel_type(raw) or "gasoline"
 
 
 def parse_price(price_val: Any) -> float:
-    if price_val is None:
-        return 0.0
-    if isinstance(price_val, (int, float)):
-        return float(price_val)
-    if isinstance(price_val, str):
-        cleaned = "".join(c for c in price_val if c.isdigit() or c == ".")
-        try:
-            return float(cleaned) if cleaned else 0.0
-        except ValueError:
-            return 0.0
-    return 0.0
+    return _canonical_parse_price(price_val) or 0.0
 
 
 def parse_int(value: Any, default: int = 0) -> int:
-    """Best-effort integer parsing for loosely typed vendor payloads."""
-    if value is None or isinstance(value, bool):
-        return default
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return default
-        return int(parse_price(stripped))
-    return default
-
-
-def parse_float(value: Any) -> float | None:
-    """Best-effort float parsing that preserves sign (for lat/lng)."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return float(stripped)
-        except ValueError:
-            return None
-    return None
+    result = _canonical_parse_int(value)
+    return result if result is not None else default
 
 
 def normalize_auto_dev_listing(raw: dict[str, Any]) -> dict[str, Any] | None:
@@ -396,33 +357,43 @@ class IngestionPipeline:
             return
 
         enriched_count = 0
-        async with NHTSAClient() as client:
-            for vehicle in vehicles:
-                before = {
-                    "make": vehicle.get("make"),
-                    "model": vehicle.get("model"),
-                    "year": vehicle.get("year"),
-                    "fuel_type": vehicle.get("fuel_type"),
-                    "engine": vehicle.get("engine"),
-                    "body_type": vehicle.get("body_type"),
-                }
-                try:
-                    nhtsa_data = await client.decode_vin(vehicle["vin"])
-                    enrich_with_nhtsa(vehicle, nhtsa_data)
-                except Exception as exc:  # pragma: no cover - defensive path
-                    logger.error("NHTSA decode failed for VIN %s: %s", vehicle["vin"], exc)
-                    self.stats["errors"].append(f"nhtsa:{vehicle['vin']}: {exc}")
-                    continue
+        semaphore = asyncio.Semaphore(8)
 
-                after = {
-                    "make": vehicle.get("make"),
-                    "model": vehicle.get("model"),
-                    "year": vehicle.get("year"),
-                    "fuel_type": vehicle.get("fuel_type"),
-                    "engine": vehicle.get("engine"),
-                    "body_type": vehicle.get("body_type"),
-                }
-                if before != after:
+        async def _enrich_one(vehicle: dict[str, Any], client: NHTSAClient) -> bool:
+            before = {
+                "make": vehicle.get("make"),
+                "model": vehicle.get("model"),
+                "year": vehicle.get("year"),
+                "fuel_type": vehicle.get("fuel_type"),
+                "engine": vehicle.get("engine"),
+                "body_type": vehicle.get("body_type"),
+            }
+            try:
+                async with semaphore:
+                    nhtsa_data = await client.decode_vin(vehicle["vin"])
+                enrich_with_nhtsa(vehicle, nhtsa_data)
+            except Exception as exc:  # pragma: no cover - defensive path
+                logger.error("NHTSA decode failed for VIN %s: %s", vehicle["vin"], exc)
+                self.stats["errors"].append(f"nhtsa:{vehicle['vin']}: {exc}")
+                return False
+
+            after = {
+                "make": vehicle.get("make"),
+                "model": vehicle.get("model"),
+                "year": vehicle.get("year"),
+                "fuel_type": vehicle.get("fuel_type"),
+                "engine": vehicle.get("engine"),
+                "body_type": vehicle.get("body_type"),
+            }
+            return before != after
+
+        async with NHTSAClient() as client:
+            results = await asyncio.gather(
+                *(_enrich_one(v, client) for v in vehicles),
+                return_exceptions=True,
+            )
+            for result in results:
+                if result is True:
                     enriched_count += 1
 
         self.stats["nhtsa_enriched"] = enriched_count
