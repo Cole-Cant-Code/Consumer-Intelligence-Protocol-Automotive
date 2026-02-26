@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Restate the target vehicle and recommendation objective
-    - Present top alternatives with vehicle IDs and pricing
-    - Highlight how each option is similar to the target
-    - Call out meaningful tradeoffs (price, mileage, trim, fuel type)
-    - Suggest a practical next step (details, compare, or availability)
+    - State the target vehicle (ID, year/make/model, price) as the reference point
+    - For each alternative, lead with vehicle ID, price, and price delta vs. target
+    - Explain why each is similar (same segment, comparable specs, overlapping features)
+    - Call out the key tradeoff for each (e.g., "cheaper but higher mileage")
+    - If alternatives skew cheaper or more expensive, state the pattern explicitly
 
 domain_knowledge_activation:
-  - Vehicle segment substitution patterns
-  - Value tradeoffs across trims and model years
-  - Budget-sensitive buying behavior
+  - Cross-brand substitution patterns (e.g., Camry ↔ Accord ↔ Sonata)
+  - How model year and mileage shifts create value opportunities
+  - When a different body type can serve the same need (e.g., compact SUV vs. sedan)
 
 output_calibration:
   format: structured_narrative

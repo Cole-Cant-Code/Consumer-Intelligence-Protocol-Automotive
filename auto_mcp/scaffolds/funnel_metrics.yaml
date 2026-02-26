@@ -32,16 +32,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm reporting window and optional breakdown scope
-    - Present stage counts in order
-    - Calculate and interpret stage-to-stage conversion rates
-    - Highlight major drop-off points
-    - Tie outcomes to sales count and revenue context
+    - State reporting window, breakdown dimension (if any), and top-of-funnel volume
+    - Present stage counts as a flow: search → detail view → comparison → financing → scheduling → deposit → sale
+    - Calculate conversion rate between each adjacent pair and highlight the steepest drop-off as the primary bottleneck
+    - If breakdown is by channel or body type, compare conversion rates across segments to isolate where the bottleneck is worst
+    - Tie closed sales to revenue; recommend one specific intervention at the bottleneck stage (e.g., "add financing CTA on comparison results to close the comparison→financing gap")
 
 domain_knowledge_activation:
-  - Funnel analytics and stage drop-off interpretation
-  - Revenue attribution basics
-  - Channel performance comparison
+  - Typical automotive funnel benchmarks — search→detail is usually 40-60%, detail→comparison 20-35%, comparison→financing 15-25%, financing→sale 10-20%
+  - Bottleneck diagnosis — a stage with <50% of the expected conversion rate is the highest-leverage fix
+  - Channel-level funnel variance — organic search often has higher intent (better conversion) than paid; segment this before drawing conclusions
 
 output_calibration:
   format: structured_narrative

@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Summarize vehicle age and mileage context
-    - Evaluate likely basic and powertrain coverage status
-    - Evaluate EV/hybrid battery coverage status when applicable
-    - Note CPO eligibility indication
-    - Provide verification actions before signing
+    - State vehicle age in years and current mileage as the coverage baseline
+    - For each coverage type (basic, powertrain, EV battery), state likely active/expired with reasoning
+    - If any coverage is borderline (close to expiring by time or mileage), flag it explicitly
+    - Note whether CPO certification is indicated and what additional coverage that adds
+    - List the specific verification steps needed before purchase (check in-service date, confirm transferability)
 
 domain_knowledge_activation:
-  - Common OEM warranty structures
-  - EV battery warranty norms
-  - CPO eligibility patterns
+  - Typical OEM warranty windows (3yr/36k basic, 5yr/60k powertrain, 8yr/100k EV battery)
+  - How in-service date (not model year) determines coverage start
+  - CPO programs as extended coverage with inspection requirements
 
 output_calibration:
   format: structured_narrative
@@ -63,6 +63,7 @@ guardrails:
   disclaimers:
     - Warranty terms vary by make, trim, in-service date, and region.
     - Confirm exact coverage and transferability in writing with the manufacturer or dealer.
+    - This is not legal or financial advice. Consult a qualified professional for warranty disputes or coverage questions.
   escalation_triggers:
     - Customer asks for definitive legal interpretation of warranty denial rights
     - Customer requests guaranteed future claim approvals

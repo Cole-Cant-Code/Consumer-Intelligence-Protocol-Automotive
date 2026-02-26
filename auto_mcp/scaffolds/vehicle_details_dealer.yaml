@@ -32,16 +32,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Restate the unit identity and core attributes
-    - Highlight demand-driving and demand-limiting attributes
-    - Identify operational risks from available context
-    - Recommend immediate next actions for this unit
-    - Call out any missing data that limits confidence
+    - State vehicle ID, year/make/model/trim, price, mileage, and days on lot
+    - List demand-driving attributes (popular trim, low mileage, in-demand color)
+    - List demand-limiting attributes (high mileage for age, unpopular config, aging listing)
+    - Assign a single action recommendation (reprice, promote, hold, recondition, or wholesale)
+    - Flag missing data fields that would change the recommendation if known
 
 domain_knowledge_activation:
-  - Segment-level demand behavior
-  - Feature-package marketability
-  - Dealer inventory operations and reconditioning workflows
+  - Which trim/color/drivetrain combinations move fastest in the segment
+  - Mileage-to-age ratios that signal above/below average wear
+  - When reconditioning ROI justifies the investment vs. wholesaling
 
 output_calibration:
   format: structured_narrative

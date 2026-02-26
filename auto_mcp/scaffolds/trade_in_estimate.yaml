@@ -33,17 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Acknowledge the vehicle details provided (year, make, model, mileage, condition)
-    - Present the estimated value range (low, mid, high)
-    - Explain the key factors affecting the estimate
-    - Describe how condition and mileage impact value
-    - Recommend getting multiple in-person appraisals
+    - State vehicle identity, mileage, condition grade, and vehicle age
+    - Present the low/mid/high value range with the mid as the headline number
+    - Identify the single biggest factor pulling value up or down (usually mileage vs. age ratio)
+    - If condition is below "good," quantify how much it reduces the mid estimate
+    - Recommend in-person appraisals as the necessary next step for an actual offer
 
 domain_knowledge_activation:
-  - Vehicle depreciation curves and patterns
-  - Condition grading standards
-  - Mileage impact on vehicle value
-  - Market demand factors
+  - Depreciation curve shape (steepest in year 1, ~10%/yr after)
+  - How above/below-average mileage shifts value within the depreciation curve
+  - Condition grade definitions (excellent/good/fair/poor) and their market multipliers
 
 output_calibration:
   format: structured_narrative
@@ -64,6 +63,7 @@ guardrails:
   disclaimers:
     - This is a rough estimate based on general depreciation models. Actual trade-in value depends on vehicle condition, local market demand, and dealer assessment.
     - We strongly recommend getting in-person appraisals from multiple dealers or services like KBB, Edmunds, or CarMax.
+    - This is not financial advice. Consult a qualified professional for decisions involving vehicle valuation.
   escalation_triggers:
     - Customer expects an exact guaranteed value
     - Customer disagrees with the estimate range

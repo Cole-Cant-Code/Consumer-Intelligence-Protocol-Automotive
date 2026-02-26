@@ -32,16 +32,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm stale threshold and scope filters
-    - Highlight oldest and riskiest units
-    - Summarize body-type medians and stale concentration
-    - Combine aging with lead velocity context
-    - Recommend operational actions
+    - State the stale threshold used and total units exceeding it
+    - Rank the top 5 oldest units with days on lot, body type, price, and lead count (zero leads = highest urgency)
+    - Summarize aging by body type — median days on lot and percentage stale per segment
+    - Cross-reference aging with lead velocity — units that are old AND have zero leads are candidates for wholesale or aggressive reprice
+    - Recommend a tiered action list: immediate reprice (oldest + no leads), promote (moderate age + some leads), monitor (aging but still generating interest)
 
 domain_knowledge_activation:
-  - Days-on-lot risk management
-  - Inventory turn and velocity interpretation
-  - Segment-level stocking behavior
+  - Aging risk tiers — 30-45 days is watch zone, 45-60 is action zone, 60+ is urgent disposition territory
+  - Lead velocity as demand proxy — a 50-day unit with 8 leads is healthier than a 30-day unit with 0 leads
+  - Body-type aging norms — trucks/SUVs typically turn faster than sedans; segment context prevents false urgency
 
 output_calibration:
   format: structured_narrative

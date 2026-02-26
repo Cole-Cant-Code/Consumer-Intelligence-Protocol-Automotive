@@ -40,9 +40,9 @@ reasoning_framework:
     - Add caution flags when confidence is limited
 
 domain_knowledge_activation:
-  - Competitive pricing thresholds
-  - Days-on-lot and velocity implications
-  - Dealer repricing and promotion workflows
+  - Pricing percentile thresholds (below 25th = aggressive, 25-75th = competitive, above 75th = at risk)
+  - How days-on-lot compounds with price position (overpriced + aging = urgent action)
+  - Repricing mechanics — when a $500 drop moves the needle vs. when it doesn't
 
 output_calibration:
   format: structured_narrative

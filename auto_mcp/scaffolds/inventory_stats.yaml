@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Summarize total inventory and source breakdown
-    - Highlight geographic coverage by metro area
-    - Analyze price distribution and market segments
-    - Report on data freshness and TTL status
-    - Note any expired or stale listings
+    - Lead with total active vehicle count and source breakdown (imported vs. manual)
+    - Summarize price distribution with min/median/max and note segment gaps (e.g., no units under $15k)
+    - Report geographic coverage — number of ZIP clusters, any metros with zero or thin coverage
+    - State data freshness — percentage of listings updated within 24h, 7d, and any beyond TTL
+    - Flag the single most actionable issue (e.g., "38% of listings are >7 days stale" or "no SUVs under $25k")
 
 domain_knowledge_activation:
-  - Inventory management best practices
-  - Market coverage metrics
-  - Data quality indicators
+  - Coverage sufficiency — minimum unit count per segment and metro for credible search results
+  - Price band distribution — healthy inventory has representation across budget, mid-market, and premium tiers
+  - TTL and freshness — listings beyond TTL degrade buyer trust; stale percentage above 20% is a data quality concern
 
 output_calibration:
   format: structured_narrative

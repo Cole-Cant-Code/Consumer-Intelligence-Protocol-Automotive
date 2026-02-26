@@ -32,15 +32,15 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm unit identity and current status
-    - Interpret status implications for workflow
-    - Provide immediate next internal action
-    - Flag if status ambiguity requires manual verification
+    - State vehicle ID, year/make/model, and current status in one line
+    - Map status to internal workflow (in_stock → showroom-ready, reserved → confirm hold expiry, in_transit → track ETA, sold → archive)
+    - If status is stale (last verified > 24h), flag for manual re-check
+    - Provide the single next internal action — no multi-step plans for a status check
 
 domain_knowledge_activation:
-  - Dealer inventory status transitions
-  - Reservation and sold-unit handling
-  - Internal escalation pathways for status conflicts
+  - Status lifecycle — in_transit → in_stock → reserved → sold (and reversal paths)
+  - Hold expiry policies and when reserved units should revert to in_stock
+  - When status conflicts indicate a DMS sync issue vs. a real state change
 
 output_calibration:
   format: structured_narrative

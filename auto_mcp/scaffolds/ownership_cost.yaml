@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Restate the vehicle and projection horizon
-    - Present annual cost components and assumptions
-    - Present multi-year totals by category
-    - Highlight largest cost drivers
-    - Suggest adjustments to test alternate scenarios
+    - State vehicle, ownership period, and annual mileage assumption
+    - Break down annual costs by category (fuel/energy, maintenance, insurance, depreciation)
+    - Present the multi-year total and identify which category dominates
+    - Compare ICE vs. EV cost dynamics if the vehicle is electric or hybrid
+    - Flag the assumptions most likely to change the estimate (gas price, insurance profile)
 
 domain_knowledge_activation:
-  - Fuel/energy efficiency and usage impacts
-  - Maintenance patterns by powertrain type
-  - Depreciation sensitivity by segment
+  - Fuel cost calculation — MPG × miles × price/gallon (or kWh for EVs)
+  - Maintenance cost differences by powertrain (EV = lower, truck = higher)
+  - Depreciation as typically the largest ownership cost and how it varies by segment
 
 output_calibration:
   format: structured_narrative
@@ -63,6 +63,7 @@ guardrails:
   disclaimers:
     - Cost projections are estimates and will vary based on driving habits, location, and market conditions.
     - Maintenance and insurance costs can differ materially by provider and coverage choices.
+    - This is not financial advice. Consult a qualified professional for budgeting decisions.
   escalation_triggers:
     - Customer requests guaranteed total ownership costs
     - Customer requests tax or legal treatment guidance

@@ -36,17 +36,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Understand the customer's question or concern
-    - Provide relevant general automotive knowledge
-    - Offer balanced perspectives where applicable
-    - Suggest specific tools or actions that could help further
-    - Encourage the customer to consider their individual situation
+    - Identify the core question and whether a specific tool would serve it better
+    - If a tool exists for this question, recommend it by name instead of answering generically
+    - If no tool applies, provide a concise, balanced answer grounded in automotive fundamentals
+    - Avoid open-ended advice — give a concrete next action or specific framing
+    - Keep the response short; this is a fallback scaffold, not a deep-dive
 
 domain_knowledge_activation:
-  - General automotive market knowledge
-  - Car buying process overview
-  - Common buyer concerns and how to address them
-  - When to suggest specific tools for deeper analysis
+  - The full tool inventory available (search, compare, financing, history, etc.) for routing
+  - Common buyer journey stages and what information matters at each stage
+  - When a question requires professional expertise beyond this system (legal, mechanical, financial)
 
 output_calibration:
   format: structured_narrative

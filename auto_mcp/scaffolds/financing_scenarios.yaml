@@ -32,16 +32,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Summarize scenario inputs and APR assumption
-    - Compare monthly payment outcomes across scenarios
-    - Compare total interest across scenarios
-    - Highlight lowest-payment and lowest-interest options
-    - Provide neutral tradeoff guidance
+    - State the vehicle price, APR assumption, and number of scenarios being compared
+    - Present a compact table — columns: down payment, term, monthly payment, total interest
+    - Identify the lowest monthly payment scenario and the lowest total interest scenario
+    - Quantify the tradeoff between those two extremes (e.g., "$X/mo less but $Y more in interest")
+    - Note that all figures use an estimated APR and actual terms will differ
 
 domain_knowledge_activation:
-  - Amortization tradeoffs between term and interest
-  - Down payment impacts on loan principal
-  - Practical affordability framing
+  - How extending term length reduces monthly payment but increases total cost
+  - How down payment reduces both principal and total interest proportionally
+  - When a shorter, higher-payment loan is strategically better (e.g., low depreciation vehicles)
 
 output_calibration:
   format: structured_narrative

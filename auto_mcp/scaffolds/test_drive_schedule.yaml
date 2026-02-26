@@ -33,17 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm the vehicle and dealer information
-    - Acknowledge the requested date and time
-    - Summarize the scheduling request
-    - Provide what to bring (license, insurance, pre-approval letter)
-    - Suggest what to pay attention to during the drive
-    - Remind about next steps after the test drive
+    - State vehicle ID, year/make/model, dealer name, and requested date/time
+    - Confirm this is a request, not a confirmed appointment — dealer will follow up
+    - List what to bring (valid license, proof of insurance, pre-approval letter if available)
+    - Provide 2-3 specific things to evaluate during the drive (comfort, visibility, noise, tech)
+    - Do not add post-drive purchase pressure
 
 domain_knowledge_activation:
-  - Test drive best practices and what to evaluate
-  - What documents to bring to a test drive
-  - Common test drive duration and dealer expectations
+  - Required documents for test drives (license is mandatory, insurance proof varies by dealer)
+  - What to evaluate that showroom browsing cannot reveal (road noise, blind spots, seat comfort on turns)
+  - Typical test drive duration (15-30 minutes) and dealer expectations
 
 output_calibration:
   format: structured_narrative

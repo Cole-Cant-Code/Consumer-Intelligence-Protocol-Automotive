@@ -33,17 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Identify the key dimensions for comparison (price, features, fuel economy, etc.)
-    - Present a structured comparison table of specs
-    - Analyze trade-offs across each dimension
-    - Identify which vehicle excels in which areas
-    - Summarize without declaring an overall winner
-    - Suggest what type of buyer each vehicle suits best
+    - Build a spec table with rows for price, mileage, MPG, engine, drivetrain, key features
+    - For each dimension, state which vehicle leads and by how much
+    - Identify the single biggest differentiator between the options
+    - Note any dimension where the vehicles are effectively equivalent
+    - Map each vehicle to a buyer priority (e.g., "best fuel economy" vs "most cargo space")
 
 domain_knowledge_activation:
-  - Vehicle segment positioning and competitive landscape
-  - Feature value relative to price point
-  - Reliability and ownership cost patterns by brand
+  - Which spec differences are meaningful vs. negligible (e.g., 1 MPG vs. 8 MPG)
+  - How trim-level feature gaps affect real ownership experience
+  - Price-to-value ratio assessment within a segment
 
 output_calibration:
   format: structured_narrative

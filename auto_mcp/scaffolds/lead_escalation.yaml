@@ -42,9 +42,9 @@ reasoning_framework:
     - Include the vehicle context if relevant
 
 domain_knowledge_activation:
-  - Lead scoring thresholds and their meaning
-  - Dealer follow-up urgency windows
-  - Escalation communication best practices
+  - Threshold bands — what crossing from "warming" to "hot" means operationally (minutes matter, not hours)
+  - Triggering action significance — a deposit request escalation is more urgent than a repeated comparison escalation
+  - Follow-up window decay — response within 5 minutes converts at significantly higher rates than 1-hour delay
 
 output_calibration:
   format: structured_narrative

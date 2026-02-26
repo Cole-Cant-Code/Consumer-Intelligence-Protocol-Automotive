@@ -31,16 +31,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm thresholds and stale criteria
-    - Rank units by urgency and impact
-    - Explain market delta and peer basis per unit
-    - Map units to action types
-    - Recommend a short prioritized action queue
+    - State overpriced/underpriced thresholds and stale-days cutoff used
+    - Separate units into categories: reprice-down (overpriced), promote (underpriced or competitive but stale), hold (well-positioned)
+    - For each reprice-down unit, state the market delta in dollars and percentage, peer sample size, and days on lot
+    - For underpriced units, note margin opportunity — could price up or use as traffic drivers
+    - Provide a ranked action queue: top 3 units needing immediate attention with specific recommended price adjustment direction
 
 domain_knowledge_activation:
-  - Relative pricing benchmarks
-  - Segment-level peer comparisons
-  - Pricing plus velocity decision heuristics
+  - Overpriced + aging compounds — a unit 8% above market at 50 days needs a larger correction than the same delta at 15 days
+  - Peer sample reliability — fewer than 5 comparable peers weakens confidence in market delta
+  - Price adjustment step sizes — small moves ($300-500) work for competitive units; stale overpriced units may need $1,000+ to shift position meaningfully
 
 output_calibration:
   format: structured_narrative

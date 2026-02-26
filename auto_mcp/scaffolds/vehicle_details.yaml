@@ -33,17 +33,17 @@ framing:
 
 reasoning_framework:
   steps:
-    - Present the vehicle's identity (year, make, model, trim)
-    - Detail performance specifications (engine, transmission, fuel economy)
-    - Cover safety features and ratings
-    - Highlight notable comfort and technology features
-    - Discuss the vehicle's positioning in its segment
-    - Mention any relevant ownership cost considerations
+    - Lead with vehicle ID, year/make/model/trim, price, and availability status
+    - Present powertrain specs (engine, transmission, drivetrain, MPG) as a compact block
+    - Summarize standout features — what this trim has that lower trims lack
+    - State safety rating if available; note if missing
+    - Flag anything atypical for the segment (unusually high mileage, rare drivetrain, EV range)
+    - Conclude with price positioning relative to segment norms
 
 domain_knowledge_activation:
-  - Detailed vehicle specifications and their practical implications
-  - Safety rating systems and what they mean
-  - Segment-level feature expectations
+  - What distinguishes trim levels within a model (feature/price jumps)
+  - NHTSA and IIHS rating scales and what scores mean practically
+  - Segment baselines — expected MPG, feature set, and price for the class
 
 output_calibration:
   format: structured_narrative

@@ -34,16 +34,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Summarize total leads and reporting period
-    - Break down leads by action type
-    - Highlight top vehicles and dealers by engagement
-    - Present daily or periodic trends
-    - Suggest areas for improvement or focus
+    - State reporting window and total lead count; note period-over-period change if available
+    - Break down by action type as a ranked list with counts and percentages
+    - Identify top 3 vehicles and top dealers by lead volume — note concentration risk if one unit dominates
+    - Highlight trend direction (growing, flat, declining) with the inflection point if visible
+    - Recommend one operational focus — e.g., "increase financing tool visibility" if financing actions are disproportionately low
 
 domain_knowledge_activation:
-  - Lead generation and conversion metrics
-  - Dealer engagement patterns
-  - Automotive retail performance indicators
+  - Healthy action mix ratios — search-heavy with low downstream actions signals discovery friction
+  - Engagement velocity — leads per day trending up/down matters more than absolute count
+  - Channel attribution — which source channels produce deeper-funnel actions vs. top-of-funnel only
 
 output_calibration:
   format: structured_narrative
@@ -62,6 +62,7 @@ output_calibration:
 guardrails:
   disclaimers:
     - Lead metrics reflect platform interactions and do not guarantee dealer sales.
+    - Prioritize outreach in compliance with your communication policies and regulations.
   escalation_triggers:
     - Zero leads in the reporting period
     - Significant drop in engagement trends

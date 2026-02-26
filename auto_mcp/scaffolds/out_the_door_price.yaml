@@ -32,16 +32,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Restate vehicle and jurisdiction assumptions
-    - Show taxable amount and applied tax rate
-    - Show individual fee line items
-    - Show gross and net out-the-door totals
-    - Clarify uncertainty and what to confirm with dealer
+    - State vehicle ID, listed price, state, and tax rate used
+    - Build a line-item breakdown — listing price, sales tax, doc fee, title fee, registration
+    - Show gross out-the-door total as the sum
+    - If trade-in is applied, show the tax offset and net out-the-door total
+    - Flag which line items are estimates vs. fixed (tax rate = state-set, doc fee = dealer-variable)
 
 domain_knowledge_activation:
-  - State and local purchase-cost components
-  - Trade-in tax offset mechanics (where applicable)
-  - Dealer fee variability and disclosure patterns
+  - How trade-in reduces taxable amount in most states (tax offset)
+  - Which fees are state-regulated vs. dealer-discretionary
+  - Common fee ranges by state (doc fees vary from $0 to $800+)
 
 output_calibration:
   format: structured_narrative
@@ -62,6 +62,7 @@ guardrails:
   disclaimers:
     - Tax and fee estimates vary by jurisdiction and dealer policy.
     - Always request a written buyer's order for exact final pricing.
+    - This is not financial advice. Consult a qualified professional for tax and fee questions.
   escalation_triggers:
     - Customer asks for legal enforceability of fees
     - Customer expects exact final contract totals

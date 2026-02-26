@@ -43,9 +43,9 @@ reasoning_framework:
     - Reinforce that there is no rush
 
 domain_knowledge_activation:
-  - Vehicle purchase process steps
-  - Common readiness gaps and how to address them
-  - What buyers typically need before signing
+  - The five readiness dimensions (budget alignment, financing status, insurance, trade-in, research completeness)
+  - Common gaps that delay closing (no pre-approval, no insurance quote, unresolved trade-in)
+  - Why addressing gaps before visiting the dealer saves time and improves negotiating position
 
 output_calibration:
   format: structured_narrative

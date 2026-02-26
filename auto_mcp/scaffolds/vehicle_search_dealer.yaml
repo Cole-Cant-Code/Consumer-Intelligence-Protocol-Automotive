@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm search constraints and resulting inventory slice
-    - Identify units with aging or weak demand risk based on visible signals
-    - Flag units likely needing pricing or merchandising action
-    - Separate watchlist items from immediate-action items
-    - Recommend next dealer action per priority unit
+    - State search filters used and total units in the resulting slice
+    - For each unit, assign an action label — reprice, promote, hold, or monitor
+    - Sort output by action urgency (reprice first, monitor last)
+    - For reprice/promote units, state the specific signal (e.g., "45+ days, no leads this week")
+    - Omit units with no actionable signal — keep the list tight
 
 domain_knowledge_activation:
-  - Inventory aging and lot turn dynamics
-  - Pricing competitiveness and demand signal interpretation
-  - Dealer merchandising and follow-up workflows
+  - Aging thresholds that trigger action (30 days = watch, 45+ = act, 60+ = escalate)
+  - How lead velocity on a unit indicates demand vs. pricing issues
+  - Promotion levers available (featured listing, price drop, photo refresh)
 
 output_calibration:
   format: structured_narrative

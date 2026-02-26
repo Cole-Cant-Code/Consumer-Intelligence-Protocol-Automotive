@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm filter scope and scoring threshold
-    - Present ranked leads with score and score band
-    - Highlight top actions and recency signals per lead
-    - Identify immediate follow-up candidates
-    - Recommend near-term outreach sequence
+    - State threshold, date range, and total leads returned
+    - Rank leads by score descending; for each include score, band, and most recent action with timestamp
+    - For the top 3, state the single strongest intent signal (e.g., financing calc, deposit, repeat views)
+    - Flag any lead whose last activity is >48h old — urgency decays with time
+    - Provide a recommended call order with one-line rationale per lead
 
 domain_knowledge_activation:
-  - Lead intent scoring and recency effects
-  - Dealer follow-up prioritization workflows
-  - Engagement pattern interpretation
+  - Score bands and what they imply (e.g., 30+ = high intent, 15-29 = warming, <15 = early)
+  - Recency weighting — a 25-score lead active today outranks a 35-score lead silent for a week
+  - Action hierarchy — deposit > financing > comparison > detail view > search for intent strength
 
 output_calibration:
   format: structured_narrative

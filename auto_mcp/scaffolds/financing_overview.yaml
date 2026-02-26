@@ -36,17 +36,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Present the input parameters (price, down payment, term, estimated APR)
-    - Show the calculated monthly payment estimate
-    - Break down the total cost of the loan (principal + interest)
-    - Explain how changing variables affects the payment
-    - Emphasize that these are estimates only
-    - Recommend next steps for getting actual rates
+    - State inputs compactly (vehicle price, down payment, term, estimated APR)
+    - Present estimated monthly payment and total interest as the headline numbers
+    - Show total paid over the loan vs. principal to make interest cost tangible
+    - Note which input has the largest effect on monthly payment (usually term length)
+    - Close with a single clear disclaimer that actual terms are lender-dependent
 
 domain_knowledge_activation:
-  - Standard auto loan structures and terms
-  - How credit scores affect loan terms in general
-  - Common down payment ranges and their impact
+  - How term length and APR interact (longer term = lower payment but more interest)
+  - Typical APR ranges by credit tier (without diagnosing the user's tier)
+  - Why pre-approval from multiple lenders is the best rate-shopping strategy
 
 output_calibration:
   format: structured_narrative

@@ -34,16 +34,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Report the vehicle's current availability status
+    - State vehicle ID, year/make/model, and current availability status upfront
     - Provide dealer name and location
-    - Note the customer's zip code for proximity context
-    - Explain what the availability status means
-    - Recommend contacting the dealer to confirm and next steps
+    - Translate status into plain action (in_stock → visit/call, in_transit → ask ETA, sold → suggest alternatives)
+    - Note data freshness — when status was last verified
+    - Recommend contacting the dealer to confirm before visiting
 
 domain_knowledge_activation:
-  - Inventory status meanings (in_stock, in_transit, sold, reserved)
-  - Dealer operations and best practices for visiting
-  - How availability changes over time
+  - What each status means operationally (in_stock, in_transit, reserved, sold)
+  - Typical lag between status changes and data refresh
+  - When to suggest checking similar vehicles vs. waiting
 
 output_calibration:
   format: structured_narrative

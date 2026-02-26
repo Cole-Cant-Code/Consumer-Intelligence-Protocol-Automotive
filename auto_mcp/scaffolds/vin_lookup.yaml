@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm the VIN was valid and found in inventory
-    - Present key vehicle specifications from the lookup
-    - Highlight important details like mileage, price, and condition
-    - Note the vehicle's source and data freshness
-    - Recommend verifying details in person at the dealer
+    - Confirm VIN match status — found or not found in inventory
+    - If found, present vehicle ID, year/make/model/trim, price, mileage, dealer
+    - Flag any data gaps (missing trim, no mileage, no price) explicitly
+    - Note data source and when the listing was last verified
+    - Recommend in-person verification and suggest history report as next step
 
 domain_knowledge_activation:
-  - VIN structure and what each section encodes
-  - Vehicle specification interpretation
-  - Importance of in-person verification before purchase
+  - VIN structure (WMI, VDS, VIS) and what each section encodes
+  - Difference between VIN-decoded specs and dealer-reported listing data
+  - Why in-person inspection matters beyond data verification
 
 output_calibration:
   format: structured_narrative

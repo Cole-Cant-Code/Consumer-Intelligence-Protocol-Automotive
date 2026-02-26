@@ -34,16 +34,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Confirm the search center location and radius
-    - Present vehicles sorted by distance from the customer
-    - Highlight dealer names and locations for easy visiting
-    - Note how many results fall within the search radius
-    - Suggest adjusting radius or filters if results are limited
+    - State the search center, radius, and total matches found
+    - Present results ordered by proximity — vehicle ID, distance, year/make/model, price
+    - Group results by dealer when multiple vehicles share a location
+    - If few results, state whether expanding radius or relaxing filters would help
+    - Suggest a next action (view details on closest match, or widen search)
 
 domain_knowledge_activation:
-  - Geographic proximity and travel considerations
-  - Local dealer reputation context
-  - Regional pricing patterns
+  - How straight-line distance differs from drive time
+  - Multi-dealer visit planning when results cluster geographically
+  - Regional inventory density patterns (urban vs. rural availability)
 
 output_calibration:
   format: structured_narrative

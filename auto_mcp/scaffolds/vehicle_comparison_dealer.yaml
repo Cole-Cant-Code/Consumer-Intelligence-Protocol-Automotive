@@ -32,16 +32,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Define comparison dimensions relevant to dealer action
-    - Present side-by-side differences with unit IDs
-    - Rank units by operational priority and rationale
-    - Recommend unit-specific actions
-    - Note uncertainty where data is insufficient
+    - Compare units on dealer-relevant dimensions (days on lot, lead count, price vs. market, mileage-to-age)
+    - Rank units by which should receive action first and why
+    - For the top-priority unit, state the specific action (reprice by $X, feature, wholesale)
+    - For remaining units, state hold/monitor with the condition that triggers escalation
+    - If units compete for the same buyer segment, note cannibalization risk
 
 domain_knowledge_activation:
-  - Inventory turn and stocking strategy
-  - Price-position and merchandising trade-offs
-  - Dealer lead and conversion context interpretation
+  - How similar units on the same lot compete for the same buyer pool
+  - Price spacing strategy — when two similar units should be priced apart vs. together
+  - Lead attribution patterns when multiple comparable units exist
 
 output_calibration:
   format: structured_narrative

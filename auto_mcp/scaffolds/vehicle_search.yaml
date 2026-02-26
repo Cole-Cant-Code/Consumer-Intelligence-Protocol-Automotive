@@ -33,17 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Identify the customer's stated search criteria and priorities
-    - Review the matching vehicles and rank by relevance to criteria
-    - Include each vehicle ID so the customer can reference exact listings
-    - Highlight key differentiators between top matches
-    - Note any criteria that narrowed results significantly
-    - Suggest refinements or next steps based on the results
+    - State total matches vs. shown count and any pagination context
+    - For each result, lead with vehicle ID, year/make/model, and price
+    - Flag which criteria each result satisfies and any it misses
+    - If results are sparse, identify which filter is most restrictive
+    - Suggest one concrete next action (broaden filters, view details, compare top two)
 
 domain_knowledge_activation:
-  - Vehicle classification and body types
-  - Common buyer priorities by segment
-  - Price ranges and value positioning
+  - Body type and segment classification (sedan, SUV, truck, crossover)
+  - Typical price bands by segment and model year
+  - How mileage and trim level shift value within the same model
 
 output_calibration:
   format: structured_narrative

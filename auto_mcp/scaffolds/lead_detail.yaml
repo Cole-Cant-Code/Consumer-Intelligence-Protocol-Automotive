@@ -33,16 +33,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Summarize profile identity and current status
-    - Present recent timeline in chronological order
-    - Explain score composition by action type
-    - Highlight recent intent signals
-    - Recommend a concrete next outreach move
+    - Open with lead ID, name/contact if available, current score and band
+    - Present timeline events in reverse-chronological order (newest first) — include action type, vehicle ID, and timestamp
+    - Decompose score by action category (views, comparisons, financing, scheduling, deposits) with contribution weight
+    - Identify the behavioral pattern — narrowing (fewer vehicles, deeper actions) vs. browsing (many vehicles, shallow actions)
+    - Recommend one specific outreach move tied to the lead's last action (e.g., "follow up on the financing estimate for vehicle X")
 
 domain_knowledge_activation:
-  - Lead lifecycle interpretation
-  - Event timeline analysis
-  - Score explainability practices
+  - Narrowing funnel signals — repeat views on same VIN, financing after comparison, scheduling after financing
+  - Score composition transparency — which actions contribute most and what gaps mean (e.g., high views but no financing = price-sensitive or early-stage)
+  - Outreach timing — optimal follow-up windows by action type (deposit within hours, detail view within 24h)
 
 output_calibration:
   format: structured_narrative

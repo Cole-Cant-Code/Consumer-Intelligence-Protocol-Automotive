@@ -32,16 +32,16 @@ framing:
 
 reasoning_framework:
   steps:
-    - Restate profile and vehicle inputs
-    - Present monthly and annual low/mid/high estimates
-    - Identify factors driving the estimate
-    - Explain how quote shopping can reduce cost
-    - Provide next-step recommendation
+    - State vehicle class, driver age, ZIP, and annual mileage used
+    - Present monthly and annual estimates as a low/mid/high range
+    - Identify the top two factors driving this vehicle's premium (e.g., repair cost class, safety rating)
+    - Note whether this vehicle class tends to run above or below average insurance costs
+    - Recommend obtaining 3+ carrier quotes for actual pricing
 
 domain_knowledge_activation:
-  - Premium drivers include age, vehicle class, geography, and mileage
-  - Safety-feature and repair-cost impacts
-  - Multi-quote shopping best practices
+  - How vehicle safety ratings and repair cost groups directly affect premiums
+  - Why SUVs and performance vehicles typically cost more to insure
+  - The practical impact of deductible choices on monthly premium
 
 output_calibration:
   format: structured_narrative
