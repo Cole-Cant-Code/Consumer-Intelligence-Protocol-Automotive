@@ -17,6 +17,8 @@ AutoCIP:  Selects vehicle_comparison scaffold → structures trade-off analysis
 Result:  A response shaped by how to think about the problem, not just what data to return.
 ```
 
+> **Domain application; consumes CIP APIs only for scoring and orchestration.** AutoCIP never imports mantic-thinking directly — all multi-signal detection flows through CIP's adapter layer.
+
 ---
 
 ## Why this exists

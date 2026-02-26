@@ -17,10 +17,13 @@ from typing import (
 )
 
 from cip_protocol.engagement.scoring import (
+    LeadEvent,
     LeadScoringConfig,
+    compute_lead_score as _cip_compute_lead_score,
+    infer_lead_status as _cip_infer_lead_status,
+    lead_score_band as _cip_lead_score_band,
+    recency_multiplier as _cip_recency_multiplier,
 )
-from cip_protocol.engagement.scoring import lead_score_band as _cip_lead_score_band
-from cip_protocol.engagement.scoring import recency_multiplier as _cip_recency_multiplier
 
 # 32 public fields that every vehicle dict must expose (no internal metadata).
 VEHICLE_FIELDS = (
@@ -902,17 +905,12 @@ class SqliteVehicleStore:
             (lead_id, since_iso),
         ).fetchall()
 
-        score = 0.0
+        events: list[LeadEvent] = []
         for row in rows:
-            weight = LEAD_SCORE_WEIGHTS.get(row["action"], 0.0)
-            if weight <= 0:
-                continue
             created_at = self._parse_iso_datetime(row["created_at"])
-            if created_at is None:
-                continue
-            age_days = max(0.0, (now_dt - created_at).total_seconds() / 86_400)
-            score += weight * self._recency_multiplier(age_days)
-        return round(score, 2)
+            if created_at is not None:
+                events.append(LeadEvent(action=row["action"], created_at=created_at))
+        return _cip_compute_lead_score(events, now_dt, AUTO_SCORING_CONFIG)
 
     def _insert_lead_event(
         self,
@@ -1480,14 +1478,7 @@ class SqliteVehicleStore:
                 (resolved_lead_id,),
             ).fetchone()
             existing_status = existing_profile["status"] if existing_profile else "new"
-            if existing_status in {"won", "lost"}:
-                next_status = existing_status
-            elif score >= 22:
-                next_status = "qualified"
-            elif score >= 10:
-                next_status = "engaged"
-            else:
-                next_status = "new"
+            next_status = _cip_infer_lead_status(score, existing_status, AUTO_SCORING_CONFIG)
 
             self._conn.execute(
                 """UPDATE lead_profiles

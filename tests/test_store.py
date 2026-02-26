@@ -711,3 +711,74 @@ class TestSalesAndFunnel:
         assert overall["discovery"] >= 1
         assert overall["outcome"] >= 1
         assert "organic" in metrics["breakdown"]
+
+
+# ── CIP delegation parity ────────────────────────────────────────
+
+
+class TestCIPDelegation:
+    """Verify store scoring delegates to CIP and produces identical results."""
+
+    def test_score_matches_cip_compute_lead_score(self, store: SqliteVehicleStore):
+        """_compute_lead_score should produce the same result as CIP's compute_lead_score."""
+        from cip_protocol.engagement.scoring import (
+            LeadEvent as CIPLeadEvent,
+            compute_lead_score as cip_score,
+        )
+        from auto_mcp.data.store import AUTO_SCORING_CONFIG
+
+        store.upsert(SAMPLE_VEHICLE)
+        lead_id = store.record_lead("TEST-001", "viewed", customer_id="cip-test")
+        store.record_lead("TEST-001", "compared", lead_id=lead_id, customer_id="cip-test")
+
+        now = datetime.now(timezone.utc)
+        events = [
+            CIPLeadEvent("viewed", now),
+            CIPLeadEvent("compared", now),
+        ]
+        expected = cip_score(events, now, AUTO_SCORING_CONFIG)
+        # Events recorded ~now, so score should be 1.0 + 3.0 = 4.0
+        assert expected == pytest.approx(4.0, rel=1e-5)
+
+        detail = store.get_lead_detail(lead_id)
+        assert detail is not None
+        assert detail["score_breakdown"]["total_score"] == pytest.approx(4.0, rel=1e-5)
+
+    def test_status_inference_matches_cip(self, store: SqliteVehicleStore):
+        """Manual threshold checks replaced by infer_lead_status should behave identically."""
+        from cip_protocol.engagement.scoring import infer_lead_status
+        from auto_mcp.data.store import AUTO_SCORING_CONFIG
+
+        # Test all threshold boundaries
+        assert infer_lead_status(0, "new", AUTO_SCORING_CONFIG) == "new"
+        assert infer_lead_status(9.99, "new", AUTO_SCORING_CONFIG) == "new"
+        assert infer_lead_status(10, "new", AUTO_SCORING_CONFIG) == "engaged"
+        assert infer_lead_status(21.99, "new", AUTO_SCORING_CONFIG) == "engaged"
+        assert infer_lead_status(22, "new", AUTO_SCORING_CONFIG) == "qualified"
+        assert infer_lead_status(50, "new", AUTO_SCORING_CONFIG) == "qualified"
+        # Terminal statuses preserved
+        assert infer_lead_status(50, "won", AUTO_SCORING_CONFIG) == "won"
+        assert infer_lead_status(50, "lost", AUTO_SCORING_CONFIG) == "lost"
+
+    def test_no_direct_mantic_imports(self):
+        """No auto_mcp module should import mantic_thinking directly."""
+        import ast
+        from pathlib import Path
+
+        auto_mcp_dir = Path(__file__).parent.parent / "auto_mcp"
+        violations = []
+        for py_file in auto_mcp_dir.rglob("*.py"):
+            try:
+                tree = ast.parse(py_file.read_text())
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name.startswith("mantic_thinking"):
+                            violations.append(f"{py_file.name}: import {alias.name}")
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and node.module.startswith("mantic_thinking"):
+                        violations.append(f"{py_file.name}: from {node.module}")
+
+        assert not violations, f"Direct mantic_thinking imports found: {violations}"
