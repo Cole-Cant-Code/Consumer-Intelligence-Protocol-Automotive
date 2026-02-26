@@ -47,6 +47,9 @@ UPSERT_SQL = (
 
 DEFAULT_TTL_DAYS = 7
 EARTH_RADIUS_MILES = 3959
+ARCHIVED_SOLD_STATUS = "archived_sold"
+ARCHIVED_REMOVED_STATUS = "archived_removed"
+_ARCHIVED_STATUSES = (ARCHIVED_SOLD_STATUS, ARCHIVED_REMOVED_STATUS)
 
 LEAD_SCORE_WEIGHTS: dict[str, float] = {
     "viewed": 1.0,
@@ -619,7 +622,9 @@ class SqliteVehicleStore:
         now_iso = datetime.now(timezone.utc).isoformat()
         vin = _t(g("vin", "")).upper()
 
-        expires_at = g("expires_at", "")
+        raw_expires_at = _t(g("expires_at", ""))
+        parsed_expires_at = SqliteVehicleStore._parse_iso_datetime(raw_expires_at)
+        expires_at = parsed_expires_at.isoformat() if parsed_expires_at is not None else ""
         if not expires_at:
             ttl_days = max(0, _i(g("ttl_days", DEFAULT_TTL_DAYS), DEFAULT_TTL_DAYS))
             expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat()
@@ -910,15 +915,18 @@ class SqliteVehicleStore:
     def get(self, vehicle_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                f"SELECT {PUBLIC_COLUMNS} FROM vehicles WHERE id = ?", (vehicle_id,)
+                f"""SELECT {PUBLIC_COLUMNS} FROM vehicles
+                    WHERE id = ? AND availability_status NOT IN (?, ?)""",
+                (vehicle_id, *_ARCHIVED_STATUSES),
             ).fetchone()
         return self._row_to_dict(row) if row else None
 
     def get_by_vin(self, vin: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                f"SELECT {PUBLIC_COLUMNS} FROM vehicles WHERE vin = ? COLLATE NOCASE",
-                (vin.upper(),),
+                f"""SELECT {PUBLIC_COLUMNS} FROM vehicles
+                    WHERE vin = ? COLLATE NOCASE AND availability_status NOT IN (?, ?)""",
+                (vin.upper(), *_ARCHIVED_STATUSES),
             ).fetchone()
         return self._row_to_dict(row) if row else None
 
@@ -948,10 +956,13 @@ class SqliteVehicleStore:
             dealer_location=dealer_location,
             dealer_zip=dealer_zip,
         )
-        sql = f"SELECT {PUBLIC_COLUMNS} FROM vehicles WHERE {where} ORDER BY id"  # noqa: S608
+        sql = (
+            f"SELECT {PUBLIC_COLUMNS} FROM vehicles "
+            f"WHERE {where} AND availability_status NOT IN (?, ?) ORDER BY id"
+        )  # noqa: S608
 
         with self._lock:
-            rows = self._conn.execute(sql, params).fetchall()
+            rows = self._conn.execute(sql, [*params, *_ARCHIVED_STATUSES]).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def search_by_location(
@@ -1011,6 +1022,8 @@ class SqliteVehicleStore:
         if fuel_type:
             sql += " AND fuel_type = ? COLLATE NOCASE"
             params.append(fuel_type)
+        sql += " AND availability_status NOT IN (?, ?)"
+        params.extend(_ARCHIVED_STATUSES)
 
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
@@ -1057,7 +1070,9 @@ class SqliteVehicleStore:
         )
         with self._lock:
             row = self._conn.execute(
-                f"SELECT COUNT(*) FROM vehicles WHERE {where}", params  # noqa: S608
+                f"""SELECT COUNT(*) FROM vehicles
+                    WHERE {where} AND availability_status NOT IN (?, ?)""",  # noqa: S608
+                [*params, *_ARCHIVED_STATUSES],
             ).fetchone()
         return row[0]
 
@@ -1094,10 +1109,12 @@ class SqliteVehicleStore:
         )
         sql = (
             f"SELECT {PUBLIC_COLUMNS} FROM vehicles WHERE {where} "
-            "ORDER BY id LIMIT ? OFFSET ?"
+            "AND availability_status NOT IN (?, ?) ORDER BY id LIMIT ? OFFSET ?"
         )  # noqa: S608
         with self._lock:
-            rows = self._conn.execute(sql, [*params, limit, offset]).fetchall()
+            rows = self._conn.execute(
+                sql, [*params, *_ARCHIVED_STATUSES, limit, offset]
+            ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def search_page_with_count(
@@ -1138,11 +1155,13 @@ class SqliteVehicleStore:
         )
         sql = (
             f"SELECT {PUBLIC_COLUMNS}, COUNT(*) OVER() AS _total "
-            f"FROM vehicles WHERE {where} "
+            f"FROM vehicles WHERE {where} AND availability_status NOT IN (?, ?) "
             "ORDER BY id LIMIT ? OFFSET ?"
         )  # noqa: S608
         with self._lock:
-            rows = self._conn.execute(sql, [*params, limit, offset]).fetchall()
+            rows = self._conn.execute(
+                sql, [*params, *_ARCHIVED_STATUSES, limit, offset]
+            ).fetchall()
 
         if not rows:
             # No rows in page — need separate count for total
@@ -1174,7 +1193,10 @@ class SqliteVehicleStore:
     def remove(self, vehicle_id: str) -> bool:
         with self._lock:
             cursor = self._conn.execute(
-                "DELETE FROM vehicles WHERE id = ?", (vehicle_id,)
+                """UPDATE vehicles
+                   SET availability_status = ?, expires_at = ''
+                   WHERE id = ? AND availability_status NOT IN (?, ?)""",
+                (ARCHIVED_REMOVED_STATUS, vehicle_id, *_ARCHIVED_STATUSES),
             )
             self._conn.commit()
         return cursor.rowcount > 0
@@ -1184,35 +1206,53 @@ class SqliteVehicleStore:
         now = self._now()
         with self._lock:
             cursor = self._conn.execute(
-                "DELETE FROM vehicles WHERE expires_at != '' AND expires_at < ?", (now,)
+                """DELETE FROM vehicles
+                   WHERE availability_status NOT IN (?, ?)
+                     AND expires_at != ''
+                     AND julianday(expires_at) IS NOT NULL
+                     AND julianday(expires_at) < julianday(?)""",
+                (*_ARCHIVED_STATUSES, now),
             )
             self._conn.commit()
         return cursor.rowcount
 
     def count(self) -> int:
         with self._lock:
-            row = self._conn.execute("SELECT COUNT(*) FROM vehicles").fetchone()
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM vehicles WHERE availability_status NOT IN (?, ?)",
+                _ARCHIVED_STATUSES,
+            ).fetchone()
         return row[0]
 
     def get_stats(self) -> dict[str, Any]:
         """Comprehensive inventory analytics."""
         with self._lock:
             total = self._conn.execute(
-                "SELECT COUNT(*) FROM vehicles"
+                "SELECT COUNT(*) FROM vehicles WHERE availability_status NOT IN (?, ?)",
+                _ARCHIVED_STATUSES,
             ).fetchone()[0]
 
             expired_count = self._conn.execute(
-                "SELECT COUNT(*) FROM vehicles WHERE expires_at != '' AND expires_at < ?",
-                (self._now(),),
+                """SELECT COUNT(*) FROM vehicles
+                   WHERE availability_status NOT IN (?, ?)
+                     AND expires_at != ''
+                     AND julianday(expires_at) IS NOT NULL
+                     AND julianday(expires_at) < julianday(?)""",
+                (*_ARCHIVED_STATUSES, self._now()),
             ).fetchone()[0]
 
             source_counts = dict(self._conn.execute(
-                "SELECT source, COUNT(*) FROM vehicles GROUP BY source"
+                """SELECT source, COUNT(*) FROM vehicles
+                   WHERE availability_status NOT IN (?, ?)
+                   GROUP BY source""",
+                _ARCHIVED_STATUSES,
             ).fetchall())
 
             metro_counts = dict(self._conn.execute(
                 "SELECT dealer_location, COUNT(*) FROM vehicles "
-                "WHERE dealer_location != '' GROUP BY dealer_location"
+                "WHERE availability_status NOT IN (?, ?) AND dealer_location != '' "
+                "GROUP BY dealer_location",
+                _ARCHIVED_STATUSES,
             ).fetchall())
 
             price_stats = self._conn.execute(
@@ -1222,6 +1262,8 @@ class SqliteVehicleStore:
                     SUM(CASE WHEN price BETWEEN 20000 AND 40000 THEN 1 ELSE 0 END),
                     SUM(CASE WHEN price > 40000 THEN 1 ELSE 0 END)
                 FROM vehicles"""
+                " WHERE availability_status NOT IN (?, ?)",
+                _ARCHIVED_STATUSES,
             ).fetchone()
 
             lead_stats = self._conn.execute(
@@ -1236,7 +1278,9 @@ class SqliteVehicleStore:
                 """SELECT
                     AVG(julianday('now') - julianday(ingested_at)),
                     MAX(julianday('now') - julianday(ingested_at))
-                FROM vehicles WHERE ingested_at != ''"""
+                FROM vehicles
+                WHERE availability_status NOT IN (?, ?) AND ingested_at != ''""",
+                _ARCHIVED_STATUSES,
             ).fetchone()
 
         return {
@@ -1293,7 +1337,9 @@ class SqliteVehicleStore:
         # Single lock acquisition for the entire operation (vehicle lookup + lead insert + score)
         with self._lock:
             row = self._conn.execute(
-                f"SELECT {PUBLIC_COLUMNS} FROM vehicles WHERE id = ?", (vehicle_id,)
+                f"""SELECT {PUBLIC_COLUMNS} FROM vehicles
+                    WHERE id = ? AND availability_status NOT IN (?, ?)""",
+                (vehicle_id, *_ARCHIVED_STATUSES),
             ).fetchone()
             if not row:
                 raise ValueError(f"Vehicle {vehicle_id} not found")
@@ -1618,8 +1664,12 @@ class SqliteVehicleStore:
 
         # Single LEFT JOIN query instead of 2 separate queries + Python-side dict merge
         with self._lock:
-            zip_clause = "WHERE v.dealer_zip = ?" if dealer_zip else ""
-            zip_params = [dealer_zip] if dealer_zip else []
+            if dealer_zip:
+                zip_clause = "WHERE v.availability_status NOT IN (?, ?) AND v.dealer_zip = ?"
+                zip_params = [*_ARCHIVED_STATUSES, dealer_zip]
+            else:
+                zip_clause = "WHERE v.availability_status NOT IN (?, ?)"
+                zip_params = [*_ARCHIVED_STATUSES]
             rows = self._conn.execute(
                 f"""SELECT v.id, v.year, v.make, v.model, v.trim, v.body_type,
                           v.price, v.mileage, v.dealer_name, v.dealer_zip,
@@ -1742,7 +1792,9 @@ class SqliteVehicleStore:
             rows = self._conn.execute(
                 """SELECT id, year, make, model, trim, body_type, fuel_type, price,
                           dealer_name, dealer_zip, ingested_at, updated_at
-                   FROM vehicles""",
+                   FROM vehicles
+                   WHERE availability_status NOT IN (?, ?)""",
+                _ARCHIVED_STATUSES,
             ).fetchall()
             lead_rows = self._conn.execute(
                 """SELECT vehicle_id,
@@ -1970,7 +2022,13 @@ class SqliteVehicleStore:
             )
 
             if keep_vehicle_record is False:
-                self._conn.execute("DELETE FROM vehicles WHERE id = ?", (vehicle_id,))
+                # Keep row for lead-FK integrity while hiding it from active inventory.
+                self._conn.execute(
+                    """UPDATE vehicles
+                       SET availability_status = ?, expires_at = ''
+                       WHERE id = ?""",
+                    (ARCHIVED_SOLD_STATUS, vehicle_id),
+                )
 
             self._conn.commit()
 

@@ -133,6 +133,29 @@ class TestCRUD:
         assert store.remove("TEST-001") is True
         assert store.get("TEST-001") is None
 
+    def test_remove_archives_vehicle_and_preserves_lead_history(self, store: SqliteVehicleStore):
+        vehicle = {**SAMPLE_VEHICLE, "id": "REM-001", "vin": "REMVIN00000000001"}
+        store.upsert(vehicle)
+        lead_id = store.record_lead("REM-001", "viewed", customer_id="remove-cust")
+
+        assert store.remove("REM-001") is True
+        assert store.get("REM-001") is None
+        assert store.remove("REM-001") is False
+
+        archived_row = store._conn.execute(
+            "SELECT availability_status, expires_at FROM vehicles WHERE id = ?",
+            ("REM-001",),
+        ).fetchone()
+        assert archived_row is not None
+        assert archived_row["availability_status"] == "archived_removed"
+        assert archived_row["expires_at"] == ""
+
+        lead_actions = store._conn.execute(
+            "SELECT action FROM leads WHERE lead_id = ?",
+            (lead_id,),
+        ).fetchall()
+        assert [row["action"] for row in lead_actions] == ["viewed"]
+
     def test_remove_nonexistent(self, store: SqliteVehicleStore):
         assert store.remove("DOES-NOT-EXIST") is False
 
@@ -507,13 +530,61 @@ class TestSalesAndFunnel:
 
     def test_record_sale_can_remove_vehicle(self, store: SqliteVehicleStore):
         store.upsert({**SAMPLE_VEHICLE, "id": "SALE-002", "vin": "SALEVIN000000002"})
+        lead_id = store.record_lead("SALE-002", "viewed", customer_id="sale-cust-2")
         store.record_sale(
             vehicle_id="SALE-002",
             sold_price=23_100,
             sold_at="2026-02-20T12:00:00+00:00",
+            lead_id=lead_id,
             keep_vehicle_record=False,
         )
         assert store.get("SALE-002") is None
+
+        archived_row = store._conn.execute(
+            "SELECT availability_status, expires_at FROM vehicles WHERE id = ?",
+            ("SALE-002",),
+        ).fetchone()
+        assert archived_row is not None
+        assert archived_row["availability_status"] == "archived_sold"
+        assert archived_row["expires_at"] == ""
+
+        actions = {
+            row["action"]
+            for row in store._conn.execute(
+                "SELECT action FROM leads WHERE lead_id = ?",
+                (lead_id,),
+            ).fetchall()
+        }
+        assert "viewed" in actions
+        assert "sale_closed" in actions
+
+    def test_remove_expired_respects_timezone_offsets(self, store: SqliteVehicleStore):
+        future_utc = datetime.now(timezone.utc) + timedelta(minutes=30)
+        future_minus_five = future_utc.astimezone(timezone(timedelta(hours=-5))).isoformat()
+        past_utc = datetime.now(timezone.utc) - timedelta(minutes=30)
+        past_plus_three = past_utc.astimezone(timezone(timedelta(hours=3))).isoformat()
+
+        store.upsert(
+            {
+                **SAMPLE_VEHICLE,
+                "id": "EXP-001",
+                "vin": "EXPVIN00000000001",
+                "expires_at": future_minus_five,
+            }
+        )
+        store.upsert(
+            {
+                **SAMPLE_VEHICLE,
+                "id": "EXP-002",
+                "vin": "EXPVIN00000000002",
+                "expires_at": past_plus_three,
+            }
+        )
+
+        removed = store.remove_expired()
+        assert removed == 1
+        assert store.get("EXP-001") is not None
+        assert store.get("EXP-002") is None
 
     def test_funnel_metrics_stage_counts(self, store: SqliteVehicleStore):
         store.upsert({**SAMPLE_VEHICLE, "id": "FUNNEL-001", "vin": "FNLVIN000000001"})
