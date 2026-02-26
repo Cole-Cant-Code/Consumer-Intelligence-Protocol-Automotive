@@ -437,7 +437,12 @@ class TestLeadProfilesAndScoring:
     def test_score_math_for_recent_events(self, store: SqliteVehicleStore):
         store.upsert(SAMPLE_VEHICLE)
         lead_id = store.record_lead("TEST-001", "viewed", customer_id="cust-score")
-        store.record_lead("TEST-001", "compared", lead_id=lead_id)
+        store.record_lead(
+            "TEST-001",
+            "compared",
+            lead_id=lead_id,
+            customer_id="cust-score",
+        )
 
         detail = store.get_lead_detail(lead_id)
         assert detail is not None
@@ -455,6 +460,31 @@ class TestLeadProfilesAndScoring:
         assert a in ids
         assert b in ids
         assert hot[0]["score"] >= hot[-1]["score"]
+
+    def test_unverified_lead_id_is_not_trusted(self, store: SqliteVehicleStore):
+        store.upsert(SAMPLE_VEHICLE)
+        trusted_id = store.record_lead("TEST-001", "viewed", customer_id="trusted-customer")
+
+        hijack_attempt_id = store.record_lead(
+            "TEST-001",
+            "compared",
+            lead_id=trusted_id,
+        )
+
+        assert hijack_attempt_id != trusted_id
+
+    def test_verified_lead_id_continues_existing_profile(self, store: SqliteVehicleStore):
+        store.upsert(SAMPLE_VEHICLE)
+        lead_id = store.record_lead("TEST-001", "viewed", customer_id="cust-verified")
+
+        same_lead_id = store.record_lead(
+            "TEST-001",
+            "compared",
+            lead_id=lead_id,
+            customer_id="cust-verified",
+        )
+
+        assert same_lead_id == lead_id
 
 
 class TestDealerIntelligenceReports:
@@ -585,13 +615,66 @@ class TestSalesAndFunnel:
         assert removed == 1
         assert store.get("EXP-001") is not None
         assert store.get("EXP-002") is None
+        archived = store._conn.execute(
+            "SELECT availability_status FROM vehicles WHERE id = ?",
+            ("EXP-002",),
+        ).fetchone()
+        assert archived is not None
+        assert archived["availability_status"] == "archived_removed"
+
+    def test_remove_expired_preserves_lead_history(self, store: SqliteVehicleStore):
+        expired_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        store.upsert(
+            {
+                **SAMPLE_VEHICLE,
+                "id": "EXP-003",
+                "vin": "EXPVIN00000000003",
+                "expires_at": expired_at,
+            }
+        )
+        lead_id = store.record_lead("EXP-003", "viewed", customer_id="expiry-customer")
+
+        removed = store.remove_expired()
+
+        assert removed == 1
+        assert store.get("EXP-003") is None
+        lead_rows = store._conn.execute(
+            "SELECT COUNT(*) FROM leads WHERE lead_id = ?",
+            (lead_id,),
+        ).fetchone()
+        assert lead_rows is not None
+        assert lead_rows[0] == 1
+
+    def test_search_excludes_sold_by_default(self, store: SqliteVehicleStore):
+        store.upsert({**SAMPLE_VEHICLE, "id": "SALE-SEARCH-001", "vin": "SALESEARCHVIN0001"})
+        store.upsert({
+            **SAMPLE_VEHICLE,
+            "id": "SALE-SEARCH-002",
+            "vin": "SALESEARCHVIN0002",
+            "availability_status": "sold",
+        })
+
+        default_results = store.search()
+        internal_results = store.search(include_sold=True)
+
+        default_ids = {item["id"] for item in default_results}
+        internal_ids = {item["id"] for item in internal_results}
+        assert "SALE-SEARCH-001" in default_ids
+        assert "SALE-SEARCH-002" not in default_ids
+        assert "SALE-SEARCH-002" in internal_ids
 
     def test_funnel_metrics_stage_counts(self, store: SqliteVehicleStore):
         store.upsert({**SAMPLE_VEHICLE, "id": "FUNNEL-001", "vin": "FNLVIN000000001"})
         lead_id = store.record_lead("FUNNEL-001", "viewed", customer_id="funnel-cust")
-        store.record_lead("FUNNEL-001", "compared", lead_id=lead_id)
-        store.record_lead("FUNNEL-001", "financed", lead_id=lead_id)
-        store.record_lead("FUNNEL-001", "availability_check", lead_id=lead_id)
+        store.record_lead(
+            "FUNNEL-001", "compared", lead_id=lead_id, customer_id="funnel-cust"
+        )
+        store.record_lead(
+            "FUNNEL-001", "financed", lead_id=lead_id, customer_id="funnel-cust"
+        )
+        store.record_lead(
+            "FUNNEL-001", "availability_check", lead_id=lead_id, customer_id="funnel-cust"
+        )
         store.record_sale(
             vehicle_id="FUNNEL-001",
             sold_price=26_000,

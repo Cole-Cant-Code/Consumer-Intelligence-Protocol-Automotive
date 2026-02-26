@@ -537,11 +537,11 @@ def record_lead_impl(
 
 
 def expire_stale_impl() -> str:
-    """Remove vehicles past their TTL expiration."""
+    """Archive vehicles past their TTL expiration."""
     count = remove_expired_vehicles()
     if count == 0:
         return "No expired listings found."
-    return f"Removed {count} expired listing(s)."
+    return f"Archived {count} expired listing(s)."
 
 
 async def bulk_import_impl(

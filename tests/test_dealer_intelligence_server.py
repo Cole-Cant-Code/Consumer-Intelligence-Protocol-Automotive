@@ -33,7 +33,12 @@ class TestDealerIntelligenceWrappers:
 
     async def test_get_funnel_metrics_returns_string(self):
         lead_id = record_vehicle_lead("VH-003", "viewed", customer_id="srv-cust-c")
-        record_vehicle_lead("VH-003", "availability_check", lead_id=lead_id)
+        record_vehicle_lead(
+            "VH-003",
+            "availability_check",
+            lead_id=lead_id,
+            customer_id="srv-cust-c",
+        )
         sale = record_sale(
             vehicle_id="VH-003",
             sold_price=25000,

@@ -490,7 +490,9 @@ class TestRecordLeadEscalation:
 
         # financed (6) + availability_check (5) = 11 → engaged
         lead_id = record_vehicle_lead("VH-001", "financed", customer_id="int-1")
-        record_vehicle_lead("VH-001", "availability_check", lead_id=lead_id)
+        record_vehicle_lead(
+            "VH-001", "availability_check", lead_id=lead_id, customer_id="int-1"
+        )
 
         pending = esc_store.get_pending(escalation_type="cold_to_warm")
         assert any(e["lead_id"] == lead_id for e in pending)
@@ -501,11 +503,15 @@ class TestRecordLeadEscalation:
 
         # First cross to engaged: financed (6) + availability_check (5) = 11
         lead_id = record_vehicle_lead("VH-002", "financed", customer_id="int-2")
-        record_vehicle_lead("VH-002", "availability_check", lead_id=lead_id)
+        record_vehicle_lead(
+            "VH-002", "availability_check", lead_id=lead_id, customer_id="int-2"
+        )
 
         # Now cross to qualified: + test_drive (8) + reserve_vehicle (9) = 28
-        record_vehicle_lead("VH-002", "test_drive", lead_id=lead_id)
-        record_vehicle_lead("VH-002", "reserve_vehicle", lead_id=lead_id)
+        record_vehicle_lead("VH-002", "test_drive", lead_id=lead_id, customer_id="int-2")
+        record_vehicle_lead(
+            "VH-002", "reserve_vehicle", lead_id=lead_id, customer_id="int-2"
+        )
 
         hot_pending = esc_store.get_pending(escalation_type="warm_to_hot")
         assert any(e["lead_id"] == lead_id for e in hot_pending)
@@ -516,11 +522,13 @@ class TestRecordLeadEscalation:
 
         # Cross to engaged: financed (6) + availability_check (5) = 11
         lead_id = record_vehicle_lead("VH-003", "financed", customer_id="int-3")
-        record_vehicle_lead("VH-003", "availability_check", lead_id=lead_id)
+        record_vehicle_lead(
+            "VH-003", "availability_check", lead_id=lead_id, customer_id="int-3"
+        )
 
         # More events that stay in engaged (score still < 22)
-        record_vehicle_lead("VH-003", "compared", lead_id=lead_id)  # +3 = 14
-        record_vehicle_lead("VH-003", "viewed", lead_id=lead_id)  # +1 = 15
+        record_vehicle_lead("VH-003", "compared", lead_id=lead_id, customer_id="int-3")  # +3 = 14
+        record_vehicle_lead("VH-003", "viewed", lead_id=lead_id, customer_id="int-3")  # +1 = 15
 
         warm_pending = esc_store.get_pending(escalation_type="cold_to_warm")
         matches = [e for e in warm_pending if e["lead_id"] == lead_id]
@@ -532,8 +540,8 @@ class TestRecordLeadEscalation:
 
         # viewed (1) + viewed (1) + compared (3) = 5 → still "new"
         lead_id = record_vehicle_lead("VH-004", "viewed", customer_id="int-4")
-        record_vehicle_lead("VH-004", "viewed", lead_id=lead_id)
-        record_vehicle_lead("VH-004", "compared", lead_id=lead_id)
+        record_vehicle_lead("VH-004", "viewed", lead_id=lead_id, customer_id="int-4")
+        record_vehicle_lead("VH-004", "compared", lead_id=lead_id, customer_id="int-4")
 
         pending = esc_store.get_pending()
         assert not any(e["lead_id"] == lead_id for e in pending)

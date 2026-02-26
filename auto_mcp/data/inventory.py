@@ -69,6 +69,7 @@ def search_vehicles(
     price_max: float | None = None,
     body_type: str | None = None,
     fuel_type: str | None = None,
+    include_sold: bool = False,
 ) -> list[dict[str, Any]]:
     """Filter vehicles by the given criteria. All filters are optional and ANDed together."""
     return get_store().search(
@@ -80,6 +81,7 @@ def search_vehicles(
         price_max=price_max,
         body_type=body_type,
         fuel_type=fuel_type,
+        include_sold=include_sold,
     )
 
 
@@ -95,6 +97,7 @@ def search_vehicles_windowed(
     fuel_type: str | None = None,
     limit: int = 10,
     offset: int = 0,
+    include_sold: bool = False,
 ) -> tuple[int, list[dict[str, Any]]]:
     """Return total matches plus a small page of vehicles for high-volume search paths."""
     store = get_store()
@@ -108,6 +111,7 @@ def search_vehicles_windowed(
             price_max=price_max,
             body_type=body_type,
             fuel_type=fuel_type,
+            include_sold=include_sold,
         )
         page = store.search_page(
             make=make,
@@ -120,6 +124,7 @@ def search_vehicles_windowed(
             fuel_type=fuel_type,
             limit=limit,
             offset=offset,
+            include_sold=include_sold,
         )
         return total, page
 
@@ -132,6 +137,7 @@ def search_vehicles_windowed(
         price_max=price_max,
         body_type=body_type,
         fuel_type=fuel_type,
+        include_sold=include_sold,
     )
     return len(matches), matches[offset:offset + max(limit, 0)]
 
@@ -142,7 +148,7 @@ def search_vehicles_by_location(**kwargs: Any) -> list[dict[str, Any]]:
 
 
 def remove_expired_vehicles() -> int:
-    """Remove vehicles past their TTL. Returns count removed."""
+    """Archive listings past TTL while preserving lead analytics history."""
     return get_store().remove_expired()
 
 

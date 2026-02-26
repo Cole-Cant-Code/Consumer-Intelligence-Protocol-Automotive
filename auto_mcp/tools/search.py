@@ -23,6 +23,7 @@ async def search_vehicles_impl(
     fuel_type: str | None = None,
     limit: int = 10,
     offset: int = 0,
+    include_sold: bool = False,
     scaffold_id: str | None = None,
     policy: str | None = None,
     context_notes: str | None = None,
@@ -47,6 +48,7 @@ async def search_vehicles_impl(
         fuel_type=fuel_type,
         limit=limit,
         offset=offset,
+        include_sold=include_sold,
     )
 
     # Build criteria description for CIP
@@ -67,6 +69,8 @@ async def search_vehicles_impl(
         criteria_parts.append(f"body type: {body_type}")
     if fuel_type:
         criteria_parts.append(f"fuel type: {fuel_type}")
+    if include_sold:
+        criteria_parts.append("including sold inventory")
 
     criteria_str = ", ".join(criteria_parts) if criteria_parts else "all vehicles"
     user_input = (

@@ -42,7 +42,7 @@ class TestDealerLeadTools:
         mock_provider: MockProvider,
     ):
         lead_id = record_vehicle_lead("VH-002", "viewed", customer_id="cust-b")
-        record_vehicle_lead("VH-002", "compared", lead_id=lead_id)
+        record_vehicle_lead("VH-002", "compared", lead_id=lead_id, customer_id="cust-b")
 
         result = await get_lead_detail_impl(mock_cip, lead_id=lead_id)
         assert isinstance(result, str)
@@ -129,7 +129,9 @@ class TestDealerFunnelAndSales:
         mock_provider: MockProvider,
     ):
         lead_id = record_vehicle_lead("VH-003", "viewed", customer_id="cust-c")
-        record_vehicle_lead("VH-003", "availability_check", lead_id=lead_id)
+        record_vehicle_lead(
+            "VH-003", "availability_check", lead_id=lead_id, customer_id="cust-c"
+        )
         record_sale_impl(
             vehicle_id="VH-003",
             sold_price=24000,

@@ -300,13 +300,17 @@ async def search_vehicles(
     fuel_type: str = "",
     limit: int = 10,
     offset: int = 0,
+    include_sold: bool = False,
     provider: str = "",
     scaffold_id: str = "",
     policy: str = "",
     context_notes: str = "",
     raw: bool = False,
 ) -> str:
-    """Search for vehicles by filters with optional pagination via limit/offset."""
+    """Search vehicles with pagination.
+
+    Sold units are excluded unless include_sold=true.
+    """
     try:
         cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
             _prepare_cip_orchestration(
@@ -329,6 +333,7 @@ async def search_vehicles(
             fuel_type=fuel_type or None,
             limit=limit,
             offset=offset,
+            include_sold=include_sold,
             scaffold_id=resolved_scaffold_id,
             policy=resolved_policy,
             context_notes=resolved_context_notes,
@@ -1732,7 +1737,7 @@ def remove_vehicle(vehicle_id: str) -> str:
 
 @mcp.tool()
 def expire_stale_listings() -> str:
-    """Remove vehicles that have passed their TTL expiration date."""
+    """Archive vehicles that have passed their TTL expiration date."""
     try:
         return expire_stale_impl()
     except Exception as exc:
