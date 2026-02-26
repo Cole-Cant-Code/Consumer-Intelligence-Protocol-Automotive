@@ -5,7 +5,7 @@ Scaffold-driven MCP server that turns car conversations into real outcomes — f
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL--1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blueviolet.svg)](https://modelcontextprotocol.io)
-[![Tests: 281](https://img.shields.io/badge/tests-281-brightgreen.svg)](tests/)
+[![Tests: 326](https://img.shields.io/badge/tests-326-brightgreen.svg)](tests/)
 
 ```
 You:     "Compare the Camry and Accord, then show me financing at 48 vs 72 months with $5k down."
@@ -296,7 +296,7 @@ cd Consumer-Intelligence-Protocol-Automotive
 uv sync --all-extras
 
 # Run tests
-uv run pytest tests/ -v    # 281 tests
+uv run pytest tests/ -v    # 326 tests
 
 # Start the server
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -359,6 +359,7 @@ claude mcp add-json autocip '{
 | `AUTO_DEV_API_KEY` | For API import | Bulk import from [Auto.dev](https://www.auto.dev) |
 | `CIP_LLM_PROVIDER` | No | Override default provider (`anthropic` or `openai`) |
 | `CIP_LLM_MODEL` | No | Override default model for the active provider |
+| `AUTOCIP_DB_PATH` | No | Override default SQLite database path |
 
 ---
 
@@ -368,6 +369,7 @@ claude mcp add-json autocip '{
 auto_mcp/
 ├── server.py              # FastMCP entry point — 45 tools, provider pool, orchestration wiring
 ├── config.py              # DomainConfig — prohibited patterns, regex guardrails, redaction
+├── normalization.py       # Canonical field normalization (price, body type, fuel type) — shared by ingestion paths
 ├── data/
 │   ├── store.py           # SQLite (WAL) — vehicles, leads, lead_profiles, sales, ingestion_log
 │   ├── inventory.py       # Public data facade (singleton)
@@ -413,7 +415,7 @@ auto_mcp/
 
 ```bash
 uv run ruff check auto_mcp tests    # lint
-uv run pytest tests -q               # 281 tests
+uv run pytest tests -q               # 326 tests
 uv run pytest tests -v --tb=short    # verbose with tracebacks
 ```
 
