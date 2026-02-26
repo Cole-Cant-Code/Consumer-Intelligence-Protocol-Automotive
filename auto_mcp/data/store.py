@@ -16,6 +16,12 @@ from typing import (
     runtime_checkable,
 )
 
+from cip_protocol.engagement.scoring import (
+    LeadScoringConfig,
+)
+from cip_protocol.engagement.scoring import lead_score_band as _cip_lead_score_band
+from cip_protocol.engagement.scoring import recency_multiplier as _cip_recency_multiplier
+
 # 32 public fields that every vehicle dict must expose (no internal metadata).
 VEHICLE_FIELDS = (
     "id", "year", "make", "model", "trim", "body_type", "price",
@@ -67,6 +73,30 @@ LEAD_SCORE_WEIGHTS: dict[str, float] = {
     "contact_dealer": 4.0,
     "purchase_deposit": 10.0,
 }
+
+AUTO_SCORING_CONFIG = LeadScoringConfig(
+    action_weights=LEAD_SCORE_WEIGHTS,
+    status_thresholds=[
+        (0, "new"),
+        (10, "engaged"),
+        (22, "qualified"),
+    ],
+    recency_bands=[
+        (1, 1.0),
+        (3, 0.85),
+        (7, 0.70),
+        (14, 0.50),
+        (30, 0.30),
+    ],
+    recency_default=0.0,
+    score_bands=[
+        (22, "hot"),
+        (10, "warm"),
+        (0, "cold"),
+    ],
+    terminal_statuses=frozenset({"won", "lost"}),
+    scoring_window_days=30,
+)
 
 FUNNEL_STAGE_ACTIONS: dict[str, tuple[str, ...]] = {
     "discovery": ("viewed",),
@@ -283,7 +313,9 @@ class SqliteVehicleStore:
         from auto_mcp.escalation.store import EscalationStore as _EscStore
 
         if self._escalation_store is None:
-            self._escalation_store = _EscStore(self._conn, self._lock)
+            self._escalation_store = _EscStore(
+                self._conn, self._lock, entity_id_field="vehicle_id",
+            )
         return self._escalation_store
 
     # ── Schema ─────────────────────────────────────────────────────
@@ -710,25 +742,11 @@ class SqliteVehicleStore:
 
     @staticmethod
     def _recency_multiplier(age_days: float) -> float:
-        if age_days <= 1:
-            return 1.0
-        if age_days <= 3:
-            return 0.85
-        if age_days <= 7:
-            return 0.70
-        if age_days <= 14:
-            return 0.50
-        if age_days <= 30:
-            return 0.30
-        return 0.0
+        return _cip_recency_multiplier(age_days, AUTO_SCORING_CONFIG)
 
     @staticmethod
     def _lead_score_band(score: float) -> str:
-        if score >= 22:
-            return "hot"
-        if score >= 10:
-            return "warm"
-        return "cold"
+        return _cip_lead_score_band(score, AUTO_SCORING_CONFIG)
 
     def _lookup_lead_profile_id(
         self,

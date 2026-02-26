@@ -118,10 +118,11 @@ class TestMCPToolWrappers:
 
 
 def _reset_provider_state() -> None:
-    server_mod._cip_pool.clear()
-    server_mod._provider_models.clear()
-    server_mod._default_provider = ""
-    set_cip_override(None)
+    pool = server_mod._pool
+    pool._pool.clear()
+    pool._provider_models.clear()
+    pool._default_provider = ""
+    pool.set_override(None)
 
 
 class TestProviderPool:
@@ -131,16 +132,17 @@ class TestProviderPool:
         monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
 
         builds: list[tuple[str, str]] = []
+        pool = server_mod._pool
 
         def _fake_build(provider: str, model: str = "") -> object:
             builds.append((provider, model))
             return {"provider": provider, "model": model}
 
-        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+        monkeypatch.setattr(pool, "_build", _fake_build)
 
-        anth_1 = server_mod._get_cip("anthropic")
-        anth_2 = server_mod._get_cip("anthropic")
-        openai_1 = server_mod._get_cip("openai")
+        anth_1 = pool.get("anthropic")
+        anth_2 = pool.get("anthropic")
+        openai_1 = pool.get("openai")
 
         assert anth_1 is anth_2
         assert anth_1 is not openai_1
@@ -152,21 +154,22 @@ class TestProviderPool:
         monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
 
         builds: list[tuple[str, str]] = []
+        pool = server_mod._pool
 
         def _fake_build(provider: str, model: str = "") -> object:
             builds.append((provider, model))
             return {"provider": provider, "model": model}
 
-        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+        monkeypatch.setattr(pool, "_build", _fake_build)
 
-        resolved = server_mod._get_cip()
+        resolved = pool.get()
         assert resolved == {"provider": "openai", "model": ""}
         assert builds == [("openai", "")]
 
     def test_set_cip_override_still_wins(self, mock_cip: CIP):
         _reset_provider_state()
         set_cip_override(mock_cip)
-        assert server_mod._get_cip("anthropic") is mock_cip
+        assert server_mod._pool.get("anthropic") is mock_cip
 
     def test_set_llm_provider_persists_model_per_provider(self, monkeypatch):
         _reset_provider_state()
@@ -174,20 +177,21 @@ class TestProviderPool:
         monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
 
         builds: list[tuple[str, str]] = []
+        pool = server_mod._pool
 
         def _fake_build(provider: str, model: str = "") -> object:
             builds.append((provider, model))
             return {"provider": provider, "model": model}
 
-        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+        monkeypatch.setattr(pool, "_build", _fake_build)
 
         msg_a = set_llm_provider("anthropic", "claude-custom")
         msg_b = set_llm_provider("openai", "gpt-custom")
 
         assert "anthropic/claude-custom" in msg_a
         assert "openai/gpt-custom" in msg_b
-        assert server_mod._provider_models["anthropic"] == "claude-custom"
-        assert server_mod._provider_models["openai"] == "gpt-custom"
+        assert pool._provider_models["anthropic"] == "claude-custom"
+        assert pool._provider_models["openai"] == "gpt-custom"
         assert builds == [("anthropic", "claude-custom"), ("openai", "gpt-custom")]
 
     def test_get_llm_provider_keeps_legacy_prefix_and_pool_details(self, monkeypatch):
@@ -195,10 +199,12 @@ class TestProviderPool:
         monkeypatch.delenv("CIP_LLM_PROVIDER", raising=False)
         monkeypatch.delenv("CIP_LLM_MODEL", raising=False)
 
+        pool = server_mod._pool
+
         def _fake_build(provider: str, model: str = "") -> object:
             return {"provider": provider, "model": model}
 
-        monkeypatch.setattr(server_mod, "_build_cip", _fake_build)
+        monkeypatch.setattr(pool, "_build", _fake_build)
 
         set_llm_provider("anthropic", "claude-test")
         status = get_llm_provider()

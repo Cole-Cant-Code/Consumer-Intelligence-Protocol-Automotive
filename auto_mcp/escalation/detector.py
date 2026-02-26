@@ -1,38 +1,43 @@
-"""Lead escalation detection — pure logic, no DB or I/O."""
+"""Lead escalation detection — automotive domain wrapper.
+
+Core logic lives in ``cip_protocol.engagement.detector``.  This module
+provides the AutoCIP-specific transition map and backward-compatible
+module-level callback management.
+"""
 
 from __future__ import annotations
 
-import logging
-import threading
-import uuid
-from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
-logger = logging.getLogger(__name__)
+from cip_protocol.engagement.detector import (
+    EscalationCallback,
+    EscalationConfig,
+    EscalationDetector,
+)
 
-# Status transitions that trigger an escalation.
+# Automotive-specific status transitions.
 ESCALATION_TRANSITIONS: dict[tuple[str, str], str] = {
     ("new", "engaged"): "cold_to_warm",
     ("new", "qualified"): "cold_to_hot",
     ("engaged", "qualified"): "warm_to_hot",
 }
 
-EscalationCallback = Callable[[dict[str, Any]], None]
+_AUTO_CONFIG = EscalationConfig(
+    transitions=ESCALATION_TRANSITIONS,
+    entity_id_field="vehicle_id",
+)
 
-_lock = threading.RLock()
-_callbacks: list[EscalationCallback] = []
+_detector = EscalationDetector(_AUTO_CONFIG)
 
 
 def register_callback(cb: EscalationCallback) -> None:
     """Register an external callback for escalation events (e.g. webhooks)."""
-    with _lock:
-        _callbacks.append(cb)
+    _detector.register_callback(cb)
 
 
 def clear_callbacks() -> None:
     """Remove all callbacks. Intended for tests."""
-    with _lock:
-        _callbacks.clear()
+    _detector.clear_callbacks()
 
 
 def check_escalation(
@@ -49,35 +54,17 @@ def check_escalation(
 ) -> dict[str, Any] | None:
     """Return an escalation record if the transition warrants one, else None.
 
-    Does NOT persist — the caller is responsible for dedup and storage.
+    Preserves the original AutoCIP call signature — maps ``vehicle_id``
+    to the generic ``entity_id`` parameter expected by CIP.
     """
-    if old_status == new_status:
-        return None
-
-    escalation_type = ESCALATION_TRANSITIONS.get((old_status, new_status))
-    if escalation_type is None:
-        return None
-
-    escalation: dict[str, Any] = {
-        "id": f"esc-{uuid.uuid4().hex[:12]}",
-        "lead_id": lead_id,
-        "escalation_type": escalation_type,
-        "old_status": old_status,
-        "new_status": new_status,
-        "score": score,
-        "vehicle_id": vehicle_id,
-        "customer_name": customer_name,
-        "customer_contact": customer_contact,
-        "source_channel": source_channel,
-        "triggering_action": action,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    with _lock:
-        for cb in _callbacks:
-            try:
-                cb(escalation)
-            except Exception:
-                logger.exception("Escalation callback failed")
-
-    return escalation
+    return _detector.check(
+        lead_id=lead_id,
+        old_status=old_status,
+        new_status=new_status,
+        score=score,
+        entity_id=vehicle_id,
+        customer_name=customer_name,
+        customer_contact=customer_contact,
+        source_channel=source_channel,
+        action=action,
+    )

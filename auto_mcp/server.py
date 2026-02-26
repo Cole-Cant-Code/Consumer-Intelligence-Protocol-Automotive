@@ -7,6 +7,10 @@ import os
 from pathlib import Path
 
 from cip_protocol import CIP
+from cip_protocol.orchestration.errors import (
+    log_and_return_tool_error as _log_and_return_tool_error,
+)
+from cip_protocol.orchestration.pool import ProviderPool
 from mcp.server.fastmcp import FastMCP
 
 from auto_mcp.config import AUTO_DOMAIN_CONFIG
@@ -78,86 +82,7 @@ logger = logging.getLogger(__name__)
 
 _SCAFFOLD_DIR = str(Path(__file__).parent / "scaffolds")
 
-_cip_pool: dict[str, CIP] = {}
-_provider_models: dict[str, str] = {}
-_default_provider: str = ""
-_cip_override: CIP | None = None
-
-_KEY_MAP = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-}
-
-_DEFAULT_MODELS = {
-    "anthropic": "claude-sonnet-4-6",
-    "openai": "gpt-4o",
-}
-
-
-def _normalize_provider_name(provider: str) -> str:
-    return provider.strip().lower()
-
-
-def _resolve_provider_name(provider: str = "") -> str:
-    resolved = (
-        _normalize_provider_name(provider)
-        or _normalize_provider_name(_default_provider)
-        or _normalize_provider_name(os.environ.get("CIP_LLM_PROVIDER", "anthropic"))
-    )
-    if resolved not in _KEY_MAP:
-        raise ValueError(f"Unknown provider '{resolved}'. Use 'anthropic' or 'openai'.")
-    return resolved
-
-
-def _resolve_model_for_provider(provider: str) -> str:
-    model = _provider_models.get(provider, "").strip()
-    if model:
-        return model
-
-    env_provider = _normalize_provider_name(os.environ.get("CIP_LLM_PROVIDER", "anthropic"))
-    env_model = os.environ.get("CIP_LLM_MODEL", "").strip()
-    if env_model and provider == env_provider:
-        _provider_models[provider] = env_model
-        return env_model
-    return ""
-
-
-def _build_cip(provider: str, model: str = "") -> CIP:
-    """Build a CIP instance for the given provider/model."""
-    api_key = os.environ.get(_KEY_MAP.get(provider, ""), "")
-    resolved_model = model or _DEFAULT_MODELS.get(provider, "")
-    return CIP.from_config(
-        AUTO_DOMAIN_CONFIG,
-        _SCAFFOLD_DIR,
-        provider,
-        api_key=api_key,
-        model=resolved_model,
-    )
-
-
-def _get_cip(provider: str = "") -> CIP:
-    """Lazy provider pool for CIP instances. Uses override if set (for testing)."""
-    global _default_provider  # noqa: PLW0603
-
-    if _cip_override is not None:
-        return _cip_override
-
-    resolved_provider = _resolve_provider_name(provider)
-    if not _default_provider:
-        _default_provider = resolved_provider
-
-    if resolved_provider not in _cip_pool:
-        resolved_model = _resolve_model_for_provider(resolved_provider)
-        _cip_pool[resolved_provider] = _build_cip(resolved_provider, resolved_model)
-
-    return _cip_pool[resolved_provider]
-
-
-def set_cip_override(cip: CIP | None) -> None:
-    """Inject a CIP instance (e.g. with MockProvider) for testing."""
-    global _cip_override  # noqa: PLW0603
-    _cip_override = cip
-
+_pool = ProviderPool(AUTO_DOMAIN_CONFIG, _SCAFFOLD_DIR)
 
 _escalation_store_ref: object | None = None
 
@@ -175,29 +100,9 @@ def _get_escalation_store():
     return _escalation_store_ref
 
 
-def _normalize_optional_text(value: str) -> str | None:
-    normalized = value.strip()
-    return normalized if normalized else None
-
-
-def _normalize_orchestration(
-    *,
-    cip: CIP,
-    tool_name: str,
-    scaffold_id: str = "",
-    policy: str = "",
-    context_notes: str = "",
-) -> tuple[str | None, str | None, str | None]:
-    resolved_scaffold_id = _normalize_optional_text(scaffold_id)
-    if resolved_scaffold_id and cip.registry.get(resolved_scaffold_id) is None:
-        raise ValueError(
-            f"Unknown scaffold_id '{resolved_scaffold_id}' for tool '{tool_name}'."
-        )
-    return (
-        resolved_scaffold_id,
-        _normalize_optional_text(policy),
-        _normalize_optional_text(context_notes),
-    )
+def set_cip_override(cip: CIP | None) -> None:
+    """Inject a CIP instance (e.g. with MockProvider) for testing."""
+    _pool.set_override(cip)
 
 
 def _prepare_cip_orchestration(
@@ -208,23 +113,13 @@ def _prepare_cip_orchestration(
     policy: str = "",
     context_notes: str = "",
 ) -> tuple[CIP, str | None, str | None, str | None]:
-    cip = _get_cip(provider)
-    resolved_scaffold_id, resolved_policy, resolved_context_notes = _normalize_orchestration(
-        cip=cip,
+    return _pool.prepare_orchestration(
         tool_name=tool_name,
+        provider=provider,
         scaffold_id=scaffold_id,
         policy=policy,
         context_notes=context_notes,
     )
-    return cip, resolved_scaffold_id, resolved_policy, resolved_context_notes
-
-
-def _log_and_return_tool_error(
-    *, tool_name: str, exc: Exception, user_message: str
-) -> str:
-    """Log full exception details while returning a safe user-facing error."""
-    logger.exception("Tool '%s' failed", tool_name, exc_info=exc)
-    return user_message
 
 
 # ── Tool registrations ──────────────────────────────────────────────
@@ -237,23 +132,8 @@ def set_llm_provider(provider: str, model: str = "") -> str:
     provider: 'anthropic' or 'openai'
     model: optional model override (defaults to claude-sonnet-4-6 / gpt-4o)
     """
-    global _default_provider  # noqa: PLW0603
-
-    provider = _normalize_provider_name(provider)
-    if provider not in _KEY_MAP:
-        return f"Unknown provider '{provider}'. Use 'anthropic' or 'openai'."
-
-    resolved_model = (
-        model.strip()
-        or _provider_models.get(provider, "").strip()
-        or _DEFAULT_MODELS.get(provider, "")
-    )
-
     try:
-        _provider_models[provider] = resolved_model
-        _default_provider = provider
-        _cip_pool[provider] = _build_cip(provider, resolved_model)
-        return f"CIP reasoning now uses {provider}/{resolved_model}."
+        return _pool.set_provider(provider, model)
     except Exception as exc:
         return _log_and_return_tool_error(
             tool_name="set_llm_provider",
@@ -265,27 +145,7 @@ def set_llm_provider(provider: str, model: str = "") -> str:
 @mcp.tool()
 def get_llm_provider() -> str:
     """Return current default provider/model and initialized provider pool details."""
-    global _default_provider  # noqa: PLW0603
-
-    try:
-        resolved_default = _resolve_provider_name(_default_provider)
-    except ValueError as exc:
-        return str(exc)
-
-    if not _default_provider:
-        _default_provider = resolved_default
-
-    resolved_model = (
-        _provider_models.get(resolved_default, "").strip()
-        or _resolve_model_for_provider(resolved_default)
-        or _DEFAULT_MODELS.get(resolved_default, "")
-    )
-    initialized = sorted(_cip_pool.keys())
-    pool_text = ", ".join(initialized) if initialized else "none"
-    return (
-        f"{resolved_default}/{resolved_model} "
-        f"(default={resolved_default}, pool=[{pool_text}])"
-    )
+    return _pool.get_info()
 
 
 @mcp.tool()

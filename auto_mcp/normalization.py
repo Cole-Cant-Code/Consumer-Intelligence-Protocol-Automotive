@@ -2,11 +2,19 @@
 
 Single source of truth — imported by both ``tools.ingestion`` (manual CRUD)
 and ``ingestion.pipeline`` (bulk Auto.dev import).
+
+Generic parsing utilities (``clean_numeric_string``, ``parse_price``, etc.)
+now live in ``cip_protocol.engagement.parsing`` and are re-exported here.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from cip_protocol.engagement.parsing import (
+    clean_numeric_string,
+    parse_float,
+    parse_int,
+    parse_price,
+)
 
 BODY_TYPE_MAP: dict[str, str] = {
     "sedan": "sedan",
@@ -32,67 +40,6 @@ FUEL_TYPE_MAP: dict[str, str] = {
 }
 
 
-def clean_numeric_string(raw: str) -> str:
-    """Keep only digits, ``'.'``, and ``'-'``."""
-    return "".join(c for c in raw if c.isdigit() or c in {".", "-"})
-
-
-def parse_price(value: Any) -> float | None:
-    """Best-effort price parsing.  Returns ``None`` for unparseable input."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        cleaned = clean_numeric_string(stripped)
-        if not cleaned:
-            return None
-        try:
-            return float(cleaned)
-        except ValueError:
-            return None
-    return None
-
-
-def parse_int(value: Any) -> int | None:
-    """Best-effort integer parsing.  Returns ``None`` for unparseable input."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        parsed = parse_price(stripped)
-        if parsed is None:
-            return None
-        return int(parsed)
-    return None
-
-
-def parse_float(value: Any) -> float | None:
-    """Best-effort float parsing that preserves sign (for lat/lng)."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return float(stripped)
-        except ValueError:
-            return None
-    return None
-
-
 def normalize_body_type(raw: str | None) -> str:
     """Map raw body-type string to canonical value.  Returns ``""`` for empty."""
     if not raw:
@@ -107,3 +54,14 @@ def normalize_fuel_type(raw: str | None) -> str:
         return ""
     normalized = raw.strip().lower()
     return FUEL_TYPE_MAP.get(normalized, normalized)
+
+__all__ = [
+    "BODY_TYPE_MAP",
+    "FUEL_TYPE_MAP",
+    "clean_numeric_string",
+    "normalize_body_type",
+    "normalize_fuel_type",
+    "parse_float",
+    "parse_int",
+    "parse_price",
+]

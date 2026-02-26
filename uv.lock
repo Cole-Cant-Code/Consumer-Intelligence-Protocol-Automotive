@@ -296,8 +296,8 @@ wheels = [
 
 [[package]]
 name = "cip-protocol"
-version = "0.1.0"
-source = { git = "https://github.com/Cole-Cant-Code/CIP-Customer-Intelligence-Protocol.git#7c04611d66ae9a995c6eff3dc727225e57ec3c1f" }
+version = "0.2.0"
+source = { git = "https://github.com/Cole-Cant-Code/CIP-Customer-Intelligence-Protocol.git#30eb504c2cddaec69c08c401c38c34f8e945af1c" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
