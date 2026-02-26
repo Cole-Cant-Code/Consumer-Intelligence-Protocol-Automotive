@@ -8,6 +8,7 @@ All NHTSA APIs are free and require no authentication.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -20,18 +21,26 @@ logger = logging.getLogger(__name__)
 _MAX_RECORDS = 20
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=8)
 _CACHE_TTL_SECONDS = 900  # 15 minutes
-_CURRENT_YEAR = datetime.now(timezone.utc).year
 
 
 def _validate_model_year(model_year: int) -> None:
-    if not (1886 <= model_year <= _CURRENT_YEAR + 1):
+    current_year = datetime.now(timezone.utc).year
+    if not (1886 <= model_year <= current_year + 1):
         raise ValueError(
-            f"model_year must be between 1886 and {_CURRENT_YEAR + 1}, got {model_year}"
+            f"model_year must be between 1886 and {current_year + 1}, got {model_year}"
         )
 
 
 def _normalize_input(value: str) -> str:
-    return value.strip().title()
+    # Keep caller-provided casing; APIs are case-insensitive and this avoids acronym corruption.
+    return value.strip()
+
+
+def _build_cache_key(url: str, params: dict[str, str] | None) -> str:
+    if not params:
+        return url
+    encoded = json.dumps(params, sort_keys=True, separators=(",", ":"))
+    return f"{url}|{encoded}"
 
 
 def _date_sort_key(value: str) -> float:
@@ -106,7 +115,7 @@ class NHTSAClient:
         if not self.session:
             raise RuntimeError("Client not entered as context manager")
 
-        cache_key = f"{url}|{params}"
+        cache_key = _build_cache_key(url, params)
         cached = self._cache.get(cache_key)
         if cached is not None:
             return cached

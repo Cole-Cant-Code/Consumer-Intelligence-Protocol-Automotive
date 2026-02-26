@@ -5,7 +5,7 @@ Scaffold-driven MCP server that turns car conversations into real outcomes — f
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL--1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blueviolet.svg)](https://modelcontextprotocol.io)
-[![Tests: 405](https://img.shields.io/badge/tests-405-brightgreen.svg)](tests/)
+[![Tests: 415](https://img.shields.io/badge/tests-415-brightgreen.svg)](tests/)
 
 ```
 You:     "Compare the Camry and Accord, then show me financing at 48 vs 72 months with $5k down."
@@ -102,7 +102,7 @@ The result: 52 tools, 35 reasoning frameworks, and a guardrail system that runs 
 |------|-------------|
 | `get_autodev_overview` | Auto.dev account/API usage overview context |
 | `get_autodev_vin_decode` | Decode VIN data from Auto.dev |
-| `get_autodev_listings` | Fetch listings by VIN or search filters (ZIP/make/model/page/limit) |
+| `get_autodev_listings` | Fetch listings by VIN or search filters (ZIP/distance/make/model/price range/page/limit) |
 | `get_autodev_vehicle_photos` | Fetch vehicle photo assets by VIN or inventory vehicle ID |
 
 ### Orchestration resources
@@ -326,7 +326,7 @@ cd Consumer-Intelligence-Protocol-Automotive
 uv sync --all-extras
 
 # Run tests
-uv run pytest tests/ -v    # 405 tests
+uv run pytest tests/ -v    # 415 tests
 
 # Start the server
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -450,7 +450,7 @@ auto_mcp/
 
 ```bash
 uv run ruff check auto_mcp tests    # lint
-uv run pytest tests -q               # 405 tests
+uv run pytest tests -q               # 415 tests
 uv run pytest tests -v --tb=short    # verbose with tracebacks
 ```
 

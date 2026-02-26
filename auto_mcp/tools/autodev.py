@@ -324,6 +324,8 @@ async def get_autodev_listings_impl(
     distance_miles: int = 50,
     make: str | None = None,
     model: str | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
     page: int = 1,
     limit: int = 25,
     scaffold_id: str | None = None,
@@ -353,6 +355,31 @@ async def get_autodev_listings_impl(
             code="INVALID_INPUT",
             message="distance_miles must be between 1 and 500.",
         )
+    if price_min is not None and price_min < 0:
+        return _format_error(
+            tool_name=_TOOL_LISTINGS,
+            raw=raw,
+            code="INVALID_INPUT",
+            message="price_min must be greater than or equal to 0.",
+        )
+    if price_max is not None and price_max < 0:
+        return _format_error(
+            tool_name=_TOOL_LISTINGS,
+            raw=raw,
+            code="INVALID_INPUT",
+            message="price_max must be greater than or equal to 0.",
+        )
+    if (
+        price_min is not None
+        and price_max is not None
+        and price_min > price_max
+    ):
+        return _format_error(
+            tool_name=_TOOL_LISTINGS,
+            raw=raw,
+            code="INVALID_INPUT",
+            message="price_min cannot be greater than price_max.",
+        )
 
     normalized_vin: str | None = None
     resolution_note = ""
@@ -372,6 +399,10 @@ async def get_autodev_listings_impl(
             ignored_parts.append(f"make={make}")
         if model:
             ignored_parts.append(f"model={model}")
+        if price_min is not None:
+            ignored_parts.append(f"price_min={price_min}")
+        if price_max is not None:
+            ignored_parts.append(f"price_max={price_max}")
         if ignored_parts:
             resolution_note = (
                 f"Resolved by VIN {normalized_vin}; {', '.join(ignored_parts)} ignored."
@@ -398,6 +429,8 @@ async def get_autodev_listings_impl(
                     distance_miles=distance_miles,
                     make=make,
                     model=model,
+                    price_min=price_min,
+                    price_max=price_max,
                     page=page,
                     limit=limit,
                 )
@@ -412,6 +445,8 @@ async def get_autodev_listings_impl(
         "distance_miles": distance_miles,
         "make": make,
         "model": model,
+        "price_min": price_min,
+        "price_max": price_max,
         "page": page,
         "limit": limit,
     }

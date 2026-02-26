@@ -38,8 +38,10 @@ class _FakeResponse:
 class _FakeSession:
     def __init__(self, payload):
         self._payload = payload
+        self.calls = 0
 
     def get(self, *_args, **_kwargs):
+        self.calls += 1
         return _FakeResponse(self._payload)
 
 
@@ -159,6 +161,27 @@ async def test_search_listings_reads_records_key():
 
 
 @pytest.mark.asyncio
+async def test_search_listings_reads_data_key():
+    client = AutoDevClient("test-key")
+    client.session = _FakeSession({"data": [{"vin": "xyz"}]})
+
+    listings = await client.search_listings(zip_code="78701")
+    assert listings == [{"vin": "xyz"}]
+
+
+@pytest.mark.asyncio
+async def test_search_listings_cache_key_is_canonical():
+    session = _FakeSession({"data": [{"vin": "xyz"}]})
+    client = AutoDevClient("test-key")
+    client.session = session
+
+    await client._request("/listings", params={"b": "2", "a": "1"})
+    await client._request("/listings", params={"a": "1", "b": "2"})
+
+    assert session.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_search_listings_sends_v2_query_params():
     captured_params = {}
 
@@ -175,12 +198,15 @@ async def test_search_listings_sends_v2_query_params():
         distance_miles=25,
         make="Toyota",
         model="Camry",
+        price_min=15000,
+        price_max=32000,
     )
 
     assert captured_params.get("zip") == "78701"
     assert captured_params.get("distance") == "25"
     assert captured_params.get("vehicle.make") == "Toyota"
     assert captured_params.get("vehicle.model") == "Camry"
+    assert captured_params.get("retailListing.price") == "15000-32000"
     assert "radius" not in captured_params
     assert "make" not in captured_params
     assert "model" not in captured_params

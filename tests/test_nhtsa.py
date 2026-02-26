@@ -10,7 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from cip_protocol import CIP
 
-from auto_mcp.clients.nhtsa import NHTSAClient, _TTLCache, _validate_model_year
+from auto_mcp.clients.nhtsa import (
+    NHTSAClient,
+    _normalize_input,
+    _TTLCache,
+    _validate_model_year,
+)
 from auto_mcp.server import (
     get_nhtsa_complaints,
     get_nhtsa_recalls,
@@ -138,6 +143,10 @@ class TestValidation:
     def test_model_year_too_high(self):
         with pytest.raises(ValueError, match="model_year"):
             _validate_model_year(3000)
+
+    def test_normalize_input_preserves_acronyms(self):
+        assert _normalize_input(" BMW ") == "BMW"
+        assert _normalize_input("GMC") == "GMC"
 
 
 # ── Client tests ──────────────────────────────────────────────────
@@ -337,6 +346,30 @@ class TestNHTSAClient:
         await client.get_recalls("Toyota", "Camry", 2024)
 
         # session.get called only once (for the single recall endpoint)
+        assert client.session.get.call_count == 1
+
+    async def test_cache_key_is_canonical_for_param_order(self):
+        client = NHTSAClient()
+        client.session = MagicMock()
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.status = 200
+        mock_ctx.json = AsyncMock(return_value={"ok": True})
+        mock_ctx.raise_for_status = MagicMock()
+        mock_ctx.request_info = MagicMock()
+        mock_ctx.history = ()
+        client.session.get = MagicMock(return_value=mock_ctx)
+
+        await client._request(
+            "https://example.test/resource",
+            params={"b": "2", "a": "1"},
+        )
+        await client._request(
+            "https://example.test/resource",
+            params={"a": "1", "b": "2"},
+        )
+
         assert client.session.get.call_count == 1
 
     async def test_cache_can_be_shared_across_client_instances(self):

@@ -99,6 +99,29 @@ class TestAutoDevToolImpls:
             result = await get_autodev_listings_impl(mock_cip, zip_code="78701")
             assert isinstance(result, str)
             instance.search_listings_raw.assert_called_once()
+            kwargs = instance.search_listings_raw.call_args.kwargs
+            assert kwargs["zip_code"] == "78701"
+            assert kwargs["distance_miles"] == 50
+
+    async def test_listings_supports_price_filter(self, mock_cip: CIP, monkeypatch):
+        monkeypatch.setenv("AUTO_DEV_API_KEY", "test-key")
+        with patch("auto_mcp.tools.autodev.AutoDevClient") as mock_client:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.search_listings_raw = AsyncMock(return_value={"data": []})
+            mock_client.return_value = instance
+
+            result = await get_autodev_listings_impl(
+                mock_cip,
+                zip_code="78701",
+                price_min=15000,
+                price_max=30000,
+            )
+            assert isinstance(result, str)
+            kwargs = instance.search_listings_raw.call_args.kwargs
+            assert kwargs["price_min"] == 15000
+            assert kwargs["price_max"] == 30000
 
     async def test_listings_by_vin_takes_precedence(self, mock_cip: CIP, monkeypatch):
         monkeypatch.setenv("AUTO_DEV_API_KEY", "test-key")
@@ -122,6 +145,15 @@ class TestAutoDevToolImpls:
     async def test_listings_requires_zip_or_vin(self, mock_cip: CIP):
         result = await get_autodev_listings_impl(mock_cip)
         assert "provide either vin or zip_code" in result.lower()
+
+    async def test_listings_rejects_inverted_price_range(self, mock_cip: CIP):
+        result = await get_autodev_listings_impl(
+            mock_cip,
+            zip_code="78701",
+            price_min=40000,
+            price_max=20000,
+        )
+        assert "price_min cannot be greater than price_max" in result.lower()
 
     async def test_photos_by_vehicle_id_success(self, mock_cip: CIP, monkeypatch):
         monkeypatch.setenv("AUTO_DEV_API_KEY", "test-key")

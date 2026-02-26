@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -125,6 +126,14 @@ def _decode_make_from_wmi(vin: str) -> str:
 @lru_cache(maxsize=1024)
 def _decode_vin_nhtsa(vin: str) -> dict[str, Any]:
     """Decode VIN via NHTSA vPIC and map to AutoCIP canonical fields."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        # Avoid synchronous network IO on an active event loop thread.
+        return {}
+
     url = (
         "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVINValuesExtended/"
         f"{parse.quote(vin)}?format=json"

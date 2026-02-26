@@ -71,6 +71,20 @@ def _normalize_vin(vin: str) -> str:
     return normalized
 
 
+def _build_cache_key(url: str, params: dict[str, str] | None) -> str:
+    if not params:
+        return url
+    # Stable serialization prevents cache misses from dict insertion-order differences.
+    encoded = json.dumps(params, sort_keys=True, separators=(",", ":"))
+    return f"{url}|{encoded}"
+
+
+def _format_price_part(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
 class AutoDevClient:
     """Async client for Auto.dev public endpoints."""
 
@@ -106,7 +120,7 @@ class AutoDevClient:
             raise RuntimeError("Client not entered as context manager")
 
         url = f"{self.BASE_URL}{path}"
-        cache_key = f"{url}|{params}"
+        cache_key = _build_cache_key(url, params)
         cached = self._cache.get(cache_key)
         if cached is not None:
             return cached
@@ -190,6 +204,8 @@ class AutoDevClient:
         distance_miles: int = 50,
         make: str | None = None,
         model: str | None = None,
+        price_min: float | None = None,
+        price_max: float | None = None,
         page: int = 1,
         limit: int = 25,
     ) -> dict[str, Any]:
@@ -207,6 +223,10 @@ class AutoDevClient:
         if model:
             normalized_model = model.strip()
             params["vehicle.model"] = normalized_model
+        if price_min is not None or price_max is not None:
+            low = "" if price_min is None else _format_price_part(price_min)
+            high = "" if price_max is None else _format_price_part(price_max)
+            params["retailListing.price"] = f"{low}-{high}"
 
         data = await self._request("/listings", params=params)
         return data if isinstance(data, dict) else {"data": data}
@@ -218,6 +238,8 @@ class AutoDevClient:
         distance_miles: int = 50,
         make: str | None = None,
         model: str | None = None,
+        price_min: float | None = None,
+        price_max: float | None = None,
         page: int = 1,
         limit: int = 25,
     ) -> list[dict[str, Any]]:
@@ -227,9 +249,16 @@ class AutoDevClient:
             distance_miles=distance_miles,
             make=make,
             model=model,
+            price_min=price_min,
+            price_max=price_max,
             page=page,
             limit=limit,
         )
+        data = payload.get("data")
+        if isinstance(data, list):
+            return [r for r in data if isinstance(r, dict)]
+        if isinstance(data, dict):
+            return [data]
         records = payload.get("records")
         if isinstance(records, list):
             return [r for r in records if isinstance(r, dict)]
