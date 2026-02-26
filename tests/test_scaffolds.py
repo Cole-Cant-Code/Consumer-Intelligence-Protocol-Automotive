@@ -26,7 +26,7 @@ def registry() -> ScaffoldRegistry:
 class TestScaffoldValidation:
     def test_all_scaffolds_valid(self):
         count, errors = validate_scaffold_directory(SCAFFOLD_DIR)
-        assert count == 34
+        assert count == 35
         assert len(errors) == 0
 
     def test_all_ids_unique(self, registry: ScaffoldRegistry):
@@ -68,6 +68,10 @@ class TestScaffoldRouting:
             ("get_nhtsa_recalls", "nhtsa_safety"),
             ("get_nhtsa_complaints", "nhtsa_safety"),
             ("get_nhtsa_safety_ratings", "nhtsa_safety"),
+            ("get_autodev_overview", "autodev_data"),
+            ("get_autodev_vin_decode", "autodev_data"),
+            ("get_autodev_listings", "autodev_data"),
+            ("get_autodev_vehicle_photos", "autodev_data"),
         ],
     )
     def test_tool_routes_to_scaffold(

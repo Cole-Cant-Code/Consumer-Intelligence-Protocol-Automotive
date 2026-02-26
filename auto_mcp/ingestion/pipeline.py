@@ -11,8 +11,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-import aiohttp
-
+from auto_mcp.clients.autodev import AutoDevClient
 from auto_mcp.clients.nhtsa import SHARED_NHTSA_CACHE, NHTSAClient
 from auto_mcp.data.inventory import get_store
 from auto_mcp.normalization import (
@@ -84,91 +83,6 @@ class IngestConfig:
     rate_limit_per_sec: float = 1.0
     dry_run: bool = False
     auto_dev_key: str = ""
-
-
-# ── Source clients ──────────────────────────────────────────────────
-
-
-class AutoDevClient:
-    """Client for Auto.dev API (free tier: 1000 calls/month)."""
-
-    BASE_URL = "https://auto.dev/api"
-
-    def __init__(self, api_key: str) -> None:
-        self.api_key = api_key
-        self.session: aiohttp.ClientSession | None = None
-
-    async def __aenter__(self) -> AutoDevClient:
-        self.session = aiohttp.ClientSession(
-            headers={"Authorization": f"Bearer {self.api_key}"},
-        )
-        return self
-
-    async def __aexit__(self, *args: Any) -> None:
-        if self.session:
-            await self.session.close()
-
-    async def search_listings(
-        self,
-        zip_code: str,
-        radius: int = 50,
-        make: str | None = None,
-        model: str | None = None,
-        year_min: int | None = None,
-        year_max: int | None = None,
-        price_max: int | None = None,
-    ) -> list[dict[str, Any]]:
-        if not self.session:
-            raise RuntimeError("Client not entered as context manager")
-
-        params: dict[str, Any] = {"zip": zip_code, "radius": radius}
-        if make:
-            params["make"] = make
-        if model:
-            params["model"] = model
-        if year_min:
-            params["yearMin"] = year_min
-        if year_max:
-            params["yearMax"] = year_max
-        if price_max:
-            params["priceMax"] = price_max
-
-        try:
-            async with self.session.get(
-                f"{self.BASE_URL}/listings",
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status == 429:
-                    logger.warning("Rate limited by Auto.dev API")
-                    return []
-                resp.raise_for_status()
-                data = await resp.json()
-                records = data.get("records")
-                if isinstance(records, list):
-                    return records
-                listings = data.get("listings")
-                if isinstance(listings, list):
-                    return listings
-                return []
-        except aiohttp.ClientError as e:
-            logger.error("Auto.dev API error: %s", e)
-            return []
-
-    async def decode_vin(self, vin: str) -> dict[str, Any] | None:
-        if not self.session:
-            raise RuntimeError("Client not entered as context manager")
-
-        try:
-            async with self.session.get(
-                f"{self.BASE_URL}/vin/{vin}",
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                return await resp.json()
-        except aiohttp.ClientError:
-            return None
 
 
 # ── Normalization ───────────────────────────────────────────────────
@@ -403,7 +317,7 @@ class IngestionPipeline:
                     try:
                         listings = await client.search_listings(
                             zip_code=zip_code,
-                            radius=self.config.radius_miles,
+                            distance_miles=self.config.radius_miles,
                             make=make,
                             model=model,
                         )

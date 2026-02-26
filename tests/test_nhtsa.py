@@ -519,6 +519,120 @@ class TestNHTSAToolImpls:
         assert payload["data"]["error"] is True
         assert payload["data"]["code"] == "VEHICLE_NOT_FOUND"
 
+    async def test_recalls_via_vin_decode(self, mock_cip: CIP):
+        """VIN is decoded via NHTSA, then recalls fetched with decoded make/model/year."""
+        with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.decode_vin = AsyncMock(
+                return_value={"Make": "Toyota", "Model": "Camry", "ModelYear": "2024"}
+            )
+            instance.get_recalls = AsyncMock(
+                return_value={"count": 3, "summary": {}, "records": []}
+            )
+            MockClient.return_value = instance
+
+            result = await get_nhtsa_recalls_impl(
+                mock_cip, vin="1HGCV1F39NA000001"
+            )
+            assert isinstance(result, str)
+            instance.decode_vin.assert_called_once_with("1HGCV1F39NA000001")
+            instance.get_recalls.assert_called_once_with("Toyota", "Camry", 2024)
+
+    async def test_complaints_via_vin_decode(self, mock_cip: CIP):
+        with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.decode_vin = AsyncMock(
+                return_value={"Make": "Honda", "Model": "Civic", "ModelYear": "2023"}
+            )
+            instance.get_complaints = AsyncMock(
+                return_value={"count": 0, "summary": {}, "records": []}
+            )
+            MockClient.return_value = instance
+
+            result = await get_nhtsa_complaints_impl(
+                mock_cip, vin="2HGFE1F70RN000001"
+            )
+            assert isinstance(result, str)
+            instance.get_complaints.assert_called_once_with("Honda", "Civic", 2023)
+
+    async def test_safety_ratings_via_vin_decode(self, mock_cip: CIP):
+        with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.decode_vin = AsyncMock(
+                return_value={"Make": "Ford", "Model": "F-150", "ModelYear": "2024"}
+            )
+            instance.get_safety_ratings = AsyncMock(
+                return_value={"count": 1, "summary": {}, "records": []}
+            )
+            MockClient.return_value = instance
+
+            result = await get_nhtsa_safety_ratings_impl(
+                mock_cip, vin="1FTFW1E80RFA00001"
+            )
+            assert isinstance(result, str)
+            instance.get_safety_ratings.assert_called_once_with("Ford", "F-150", 2024)
+
+    async def test_vin_takes_precedence_over_vehicle_id_and_direct(self, mock_cip: CIP):
+        """VIN > vehicle_id > direct params."""
+        with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.decode_vin = AsyncMock(
+                return_value={"Make": "Hyundai", "Model": "Tucson", "ModelYear": "2024"}
+            )
+            instance.get_recalls = AsyncMock(
+                return_value={"count": 0, "summary": {}, "records": []}
+            )
+            MockClient.return_value = instance
+
+            result = await get_nhtsa_recalls_impl(
+                mock_cip,
+                vin="KMHJ3814RU000001",
+                vehicle_id="VH-001",
+                make="IgnoredMake",
+                model="IgnoredModel",
+                model_year=1999,
+            )
+            assert isinstance(result, str)
+            # VIN decode wins — vehicle_id and direct params ignored
+            instance.decode_vin.assert_called_once_with("KMHJ3814RU000001")
+            instance.get_recalls.assert_called_once_with("Hyundai", "Tucson", 2024)
+
+    async def test_vin_decode_failure_returns_error(self, mock_cip: CIP):
+        with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.decode_vin = AsyncMock(return_value=None)
+            MockClient.return_value = instance
+
+            result = await get_nhtsa_recalls_impl(
+                mock_cip, vin="BADVIN12345678901"
+            )
+            assert "could not decode" in result.lower()
+
+    async def test_vin_decode_incomplete_returns_error(self, mock_cip: CIP):
+        with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.decode_vin = AsyncMock(
+                return_value={"Make": "Toyota", "Model": "", "ModelYear": ""}
+            )
+            MockClient.return_value = instance
+
+            result = await get_nhtsa_recalls_impl(
+                mock_cip, vin="1HGCV1F39NA000001"
+            )
+            assert "incomplete" in result.lower()
+
     async def test_raw_invalid_model_year_type_returns_structured_payload(
         self, mock_cip: CIP
     ):
@@ -599,6 +713,22 @@ class TestNHTSAMCPWrappers:
         )
         assert "having trouble" in result.lower()
         assert "simulated-failure" not in result.lower()
+
+    async def test_nhtsa_recalls_via_vin_wrapper(self):
+        with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:
+            instance = AsyncMock()
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            instance.decode_vin = AsyncMock(
+                return_value={"Make": "Toyota", "Model": "Camry", "ModelYear": "2024"}
+            )
+            instance.get_recalls = AsyncMock(
+                return_value={"count": 0, "summary": {}, "records": []}
+            )
+            MockClient.return_value = instance
+
+            result = await get_nhtsa_recalls(vin="1HGCV1F39NA000001")
+            assert isinstance(result, str)
 
     async def test_nhtsa_recalls_accepts_orchestration_params(self):
         with patch("auto_mcp.tools.nhtsa.NHTSAClient") as MockClient:

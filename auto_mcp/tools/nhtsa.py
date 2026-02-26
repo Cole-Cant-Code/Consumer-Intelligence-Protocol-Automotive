@@ -74,10 +74,11 @@ def _format_error(
     return _build_raw_response(tool_name, payload)
 
 
-def _resolve_request_params(
+async def _resolve_request_params(
     *,
     tool_name: str,
     raw: bool,
+    vin: str | None,
     make: str | None,
     model: str | None,
     model_year: int | None,
@@ -85,11 +86,63 @@ def _resolve_request_params(
 ) -> tuple[str, str, int, str, str | None]:
     """Resolve inputs and precedence rules.
 
+    Precedence: vin > vehicle_id > direct make/model/year.
+
     Returns: (make, model, model_year, resolution_note, error_response)
     """
     resolution_note = ""
 
-    if vehicle_id:
+    if vin:
+        # VIN takes top precedence — decode via NHTSA vPIC
+        async with NHTSAClient(cache=SHARED_NHTSA_CACHE) as client:
+            decoded = await client.decode_vin(vin)
+        if not decoded:
+            return "", "", 0, resolution_note, _format_error(
+                tool_name=tool_name,
+                raw=raw,
+                code="VIN_DECODE_FAILED",
+                message=f"Could not decode VIN '{vin}' via NHTSA. Verify the VIN is correct.",
+                details={"vin": vin},
+            )
+        decoded_make = str(decoded.get("Make", "")).strip()
+        decoded_model = str(decoded.get("Model", "")).strip()
+        decoded_year_raw = decoded.get("ModelYear", "")
+        if not decoded_make or not decoded_model or not decoded_year_raw:
+            return "", "", 0, resolution_note, _format_error(
+                tool_name=tool_name,
+                raw=raw,
+                code="VIN_DECODE_INCOMPLETE",
+                message=(
+                    f"NHTSA decoded VIN '{vin}' but returned incomplete data "
+                    f"(make={decoded_make!r}, model={decoded_model!r}, year={decoded_year_raw!r})."
+                ),
+                details={"vin": vin, "decoded": decoded},
+            )
+        try:
+            decoded_year = int(decoded_year_raw)
+        except (TypeError, ValueError):
+            return "", "", 0, resolution_note, _format_error(
+                tool_name=tool_name,
+                raw=raw,
+                code="VIN_DECODE_INCOMPLETE",
+                message=f"NHTSA returned a non-numeric model year for VIN '{vin}'.",
+                details={"vin": vin, "model_year_raw": decoded_year_raw},
+            )
+        ignored_parts = []
+        if vehicle_id:
+            ignored_parts.append(f"vehicle_id={vehicle_id}")
+        if make or model or model_year is not None:
+            ignored_parts.append("explicit make/model/year")
+        if ignored_parts:
+            resolution_note = (
+                f"Resolved from VIN {vin} via NHTSA decode; "
+                f"{', '.join(ignored_parts)} ignored."
+            )
+        else:
+            resolution_note = f"Resolved from VIN {vin} via NHTSA decode."
+        make, model, model_year = decoded_make, decoded_model, decoded_year
+
+    elif vehicle_id:
         vehicle, err = _resolve_vehicle(vehicle_id)
         if err:
             return "", "", 0, resolution_note, _format_error(
@@ -158,6 +211,7 @@ def _resolve_request_params(
 async def get_nhtsa_recalls_impl(
     cip: CIP,
     *,
+    vin: str | None = None,
     make: str | None = None,
     model: str | None = None,
     model_year: int | None = None,
@@ -168,9 +222,10 @@ async def get_nhtsa_recalls_impl(
     raw: bool = False,
 ) -> str:
     """Look up NHTSA recall data for a vehicle."""
-    make, model, model_year, metadata_note, error_response = _resolve_request_params(
+    make, model, model_year, metadata_note, error_response = await _resolve_request_params(
         tool_name=_TOOL_RECALLS,
         raw=raw,
+        vin=vin,
         make=make,
         model=model,
         model_year=model_year,
@@ -200,6 +255,8 @@ async def get_nhtsa_recalls_impl(
         "nhtsa_recalls": data,
         "data_source": "NHTSA Recalls API (api.nhtsa.gov)",
     }
+    if vin:
+        data_context["vehicle"]["vin"] = vin
     if vehicle_id:
         data_context["vehicle"]["vehicle_id"] = vehicle_id
     if metadata_note:
@@ -220,6 +277,7 @@ async def get_nhtsa_recalls_impl(
 async def get_nhtsa_complaints_impl(
     cip: CIP,
     *,
+    vin: str | None = None,
     make: str | None = None,
     model: str | None = None,
     model_year: int | None = None,
@@ -230,9 +288,10 @@ async def get_nhtsa_complaints_impl(
     raw: bool = False,
 ) -> str:
     """Look up NHTSA complaint data for a vehicle."""
-    make, model, model_year, metadata_note, error_response = _resolve_request_params(
+    make, model, model_year, metadata_note, error_response = await _resolve_request_params(
         tool_name=_TOOL_COMPLAINTS,
         raw=raw,
+        vin=vin,
         make=make,
         model=model,
         model_year=model_year,
@@ -262,6 +321,8 @@ async def get_nhtsa_complaints_impl(
         "nhtsa_complaints": data,
         "data_source": "NHTSA Complaints API (api.nhtsa.gov)",
     }
+    if vin:
+        data_context["vehicle"]["vin"] = vin
     if vehicle_id:
         data_context["vehicle"]["vehicle_id"] = vehicle_id
     if metadata_note:
@@ -282,6 +343,7 @@ async def get_nhtsa_complaints_impl(
 async def get_nhtsa_safety_ratings_impl(
     cip: CIP,
     *,
+    vin: str | None = None,
     make: str | None = None,
     model: str | None = None,
     model_year: int | None = None,
@@ -292,9 +354,10 @@ async def get_nhtsa_safety_ratings_impl(
     raw: bool = False,
 ) -> str:
     """Look up NHTSA safety ratings for a vehicle."""
-    make, model, model_year, metadata_note, error_response = _resolve_request_params(
+    make, model, model_year, metadata_note, error_response = await _resolve_request_params(
         tool_name=_TOOL_RATINGS,
         raw=raw,
+        vin=vin,
         make=make,
         model=model,
         model_year=model_year,
@@ -324,6 +387,8 @@ async def get_nhtsa_safety_ratings_impl(
         "nhtsa_safety_ratings": data,
         "data_source": "NHTSA Safety Ratings API (api.nhtsa.gov)",
     }
+    if vin:
+        data_context["vehicle"]["vin"] = vin
     if vehicle_id:
         data_context["vehicle"]["vehicle_id"] = vehicle_id
     if metadata_note:

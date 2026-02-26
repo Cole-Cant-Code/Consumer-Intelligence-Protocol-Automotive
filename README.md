@@ -5,7 +5,7 @@ Scaffold-driven MCP server that turns car conversations into real outcomes — f
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL--1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blueviolet.svg)](https://modelcontextprotocol.io)
-[![Tests: 371](https://img.shields.io/badge/tests-371-brightgreen.svg)](tests/)
+[![Tests: 405](https://img.shields.io/badge/tests-405-brightgreen.svg)](tests/)
 
 ```
 You:     "Compare the Camry and Accord, then show me financing at 48 vs 72 months with $5k down."
@@ -29,7 +29,7 @@ AutoCIP separates **what the AI knows** from **how it thinks about it**.
 
 Every tool call is routed through a **scaffold** — a YAML reasoning framework that tells a specialist LLM how to approach a specific task. A comparison scaffold structures trade-off analysis. A financing scaffold enforces estimate framing and blocks guarantee language. A dealer lead scaffold prioritizes by intent score and recency.
 
-The result: 48 tools, 34 reasoning frameworks, and a guardrail system that runs *after* generation — not just in the prompt.
+The result: 52 tools, 35 reasoning frameworks, and a guardrail system that runs *after* generation — not just in the prompt.
 
 ---
 
@@ -58,7 +58,7 @@ The result: 48 tools, 34 reasoning frameworks, and a guardrail system that runs 
 │                                              │
 │  ┌────────────┬────────────┬──────────────┐  │
 │  │  SQLite    │ Scaffolds  │  Guardrails  │  │
-│  │  vehicles  │ 32 YAML    │  prohibited  │  │
+│  │  vehicles  │ 35 YAML    │  prohibited  │  │
 │  │  leads     │ reasoning  │  phrases,    │  │
 │  │  sales     │ frameworks │  regex,      │  │
 │  │  profiles  │            │  redaction   │  │
@@ -72,7 +72,7 @@ The result: 48 tools, 34 reasoning frameworks, and a guardrail system that runs 
 
 ## Tools
 
-48 MCP tools across 9 categories. Every CIP-routed tool accepts `raw=True` to bypass the specialist and get structured JSON directly.
+52 MCP tools across 10 categories. Every CIP-routed tool accepts `raw=True` to bypass the specialist and get structured JSON directly.
 
 ### Shopper tools
 
@@ -96,13 +96,22 @@ The result: 48 tools, 34 reasoning frameworks, and a guardrail system that runs 
 | `check_availability` | Stock check with dealer info |
 | `assess_purchase_readiness` | Readiness assessment based on budget, financing, trade-in status |
 
+### Auto.dev tools
+
+| Tool | What it does |
+|------|-------------|
+| `get_autodev_overview` | Auto.dev account/API usage overview context |
+| `get_autodev_vin_decode` | Decode VIN data from Auto.dev |
+| `get_autodev_listings` | Fetch listings by VIN or search filters (ZIP/make/model/page/limit) |
+| `get_autodev_vehicle_photos` | Fetch vehicle photo assets by VIN or inventory vehicle ID |
+
 ### NHTSA safety tools
 
 | Tool | What it does |
 |------|-------------|
-| `get_nhtsa_recalls` | NHTSA recall data by make/model/year or inventory vehicle ID |
-| `get_nhtsa_complaints` | NHTSA consumer complaints by make/model/year or inventory vehicle ID |
-| `get_nhtsa_safety_ratings` | NHTSA crash test safety ratings by make/model/year or inventory vehicle ID |
+| `get_nhtsa_recalls` | NHTSA recall data by VIN, make/model/year, or inventory vehicle ID |
+| `get_nhtsa_complaints` | NHTSA consumer complaints by VIN, make/model/year, or inventory vehicle ID |
+| `get_nhtsa_safety_ratings` | NHTSA crash test safety ratings by VIN, make/model/year, or inventory vehicle ID |
 
 ### Engagement tools
 
@@ -197,15 +206,16 @@ guardrails:
 
 The `reasoning_framework` enforces structure. The `output_calibration` controls what appears. The `guardrails` catch violations after generation.
 
-34 scaffolds covering search, comparison, financing, market pricing, NHTSA safety data, lead analysis, inventory aging, funnel metrics, escalation alerts, and more — including dealer-specific variants that shift tone and detail level for professional use.
+35 scaffolds covering search, comparison, financing, Auto.dev/NHTSA data, market pricing, lead analysis, inventory aging, funnel metrics, escalation alerts, and more — including dealer-specific variants that shift tone and detail level for professional use.
 
 <details>
-<summary>All 34 scaffolds</summary>
+<summary>All 35 scaffolds</summary>
 
 | Scaffold | Purpose |
 |----------|---------|
 | `availability_check` | Stock check with context |
 | `availability_check_dealer` | Dealer-facing stock check |
+| `autodev_data` | Auto.dev overview, VIN, listings, and photo data framing |
 | `financing_overview` | Single-scenario payment framing |
 | `financing_scenarios` | Multi-scenario comparison matrix |
 | `funnel_metrics` | Conversion funnel analysis |
@@ -308,7 +318,7 @@ cd Consumer-Intelligence-Protocol-Automotive
 uv sync --all-extras
 
 # Run tests
-uv run pytest tests/ -v    # 371 tests
+uv run pytest tests/ -v    # 405 tests
 
 # Start the server
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -368,7 +378,7 @@ claude mcp add-json autocip '{
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Yes (default provider) | Powers the inner specialist LLM (claude-sonnet-4-6) |
 | `OPENAI_API_KEY` | If using OpenAI provider | Alternative specialist (gpt-4o) |
-| `AUTO_DEV_API_KEY` | For API import | Bulk import from [Auto.dev](https://www.auto.dev) |
+| `AUTO_DEV_API_KEY` | For Auto.dev tools/import | Auto.dev overview/VIN/listings/photos + bulk import |
 | `CIP_LLM_PROVIDER` | No | Override default provider (`anthropic` or `openai`) |
 | `CIP_LLM_MODEL` | No | Override default model for the active provider |
 | `AUTOCIP_DB_PATH` | No | Override default SQLite database path |
@@ -379,7 +389,7 @@ claude mcp add-json autocip '{
 
 ```
 auto_mcp/
-├── server.py              # FastMCP entry point — 48 tools, provider pool, orchestration wiring
+├── server.py              # FastMCP entry point — 52 tools, provider pool, orchestration wiring
 ├── config.py              # DomainConfig — prohibited patterns, regex guardrails, redaction
 ├── normalization.py       # Canonical field normalization (price, body type, fuel type) — shared by ingestion paths
 ├── data/
@@ -388,8 +398,9 @@ auto_mcp/
 │   ├── journey.py         # In-memory customer journey state (saves, favorites, reservations)
 │   └── seed.py            # 25+ demo vehicles across 7 Texas locations
 ├── clients/
+│   ├── autodev.py         # Shared async Auto.dev API client (overview, VIN, listings, photos)
 │   └── nhtsa.py           # Shared async NHTSA API client (recalls, complaints, ratings, VIN decode)
-├── tools/                 # 22 modules, one per tool family
+├── tools/                 # 23 modules, one per tool family
 │   ├── orchestration.py   # run_tool_with_orchestration() — scaffold selection + raw bypass
 │   ├── search.py          # Vehicle search
 │   ├── compare.py         # Side-by-side comparison
@@ -409,13 +420,14 @@ auto_mcp/
 │   ├── dealer_intelligence.py  # Leads, aging, pricing, funnel
 │   ├── escalation.py      # Escalation alerts + acknowledgement
 │   ├── sales.py           # Sale recording
+│   ├── autodev.py         # Auto.dev overview, VIN decode, listings, photos
 │   ├── nhtsa.py           # NHTSA recalls, complaints, safety ratings
 │   ├── ingestion.py       # CRUD + VIN normalization + API import
 │   └── stats.py           # Inventory + lead analytics
 ├── escalation/
 │   ├── detector.py        # Pure threshold-crossing detection logic
 │   └── store.py           # SQLite escalation persistence + deduplication
-├── scaffolds/             # 34 YAML reasoning frameworks
+├── scaffolds/             # 35 YAML reasoning frameworks
 │   ├── vehicle_comparison.yaml
 │   ├── financing_scenarios.yaml
 │   ├── lead_hotlist.yaml
@@ -430,7 +442,7 @@ auto_mcp/
 
 ```bash
 uv run ruff check auto_mcp tests    # lint
-uv run pytest tests -q               # 371 tests
+uv run pytest tests -q               # 405 tests
 uv run pytest tests -v --tb=short    # verbose with tracebacks
 ```
 

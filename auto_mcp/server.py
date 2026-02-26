@@ -14,6 +14,12 @@ from cip_protocol.orchestration.pool import ProviderPool
 from mcp.server.fastmcp import FastMCP
 
 from auto_mcp.config import AUTO_DOMAIN_CONFIG
+from auto_mcp.tools.autodev import (
+    get_autodev_listings_impl,
+    get_autodev_overview_impl,
+    get_autodev_vehicle_photos_impl,
+    get_autodev_vin_decode_impl,
+)
 from auto_mcp.tools.availability import check_availability_impl
 from auto_mcp.tools.compare import compare_vehicles_impl
 from auto_mcp.tools.dealer_intelligence import (
@@ -1320,7 +1326,186 @@ async def get_warranty_info(
 
 
 @mcp.tool()
+async def get_autodev_overview(
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Get Auto.dev account overview and usage context."""
+    try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_autodev_overview",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_autodev_overview_impl(
+            cip,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_autodev_overview",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving Auto.dev overview data right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_autodev_vin_decode(
+    vin: str,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Decode a VIN using Auto.dev."""
+    try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_autodev_vin_decode",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_autodev_vin_decode_impl(
+            cip,
+            vin=vin,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_autodev_vin_decode",
+            exc=exc,
+            user_message=(
+                "I am having trouble decoding that VIN with Auto.dev right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_autodev_listings(
+    vin: str = "",
+    zip_code: str = "",
+    distance_miles: int = 50,
+    make: str = "",
+    model: str = "",
+    page: int = 1,
+    limit: int = 25,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Fetch Auto.dev listings by VIN or search filters."""
+    try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_autodev_listings",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_autodev_listings_impl(
+            cip,
+            vin=vin or None,
+            zip_code=zip_code,
+            distance_miles=distance_miles,
+            make=make or None,
+            model=model or None,
+            page=page,
+            limit=limit,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_autodev_listings",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving Auto.dev listings right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_autodev_vehicle_photos(
+    vin: str = "",
+    vehicle_id: str = "",
+    max_photos: int = 12,
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Fetch Auto.dev vehicle photos by VIN or inventory vehicle ID."""
+    try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_autodev_vehicle_photos",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_autodev_vehicle_photos_impl(
+            cip,
+            vin=vin or None,
+            vehicle_id=vehicle_id or None,
+            max_photos=max_photos,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_autodev_vehicle_photos",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving Auto.dev vehicle photos right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
 async def get_nhtsa_recalls(
+    vin: str = "",
     make: str = "",
     model: str = "",
     model_year: int | None = None,
@@ -1331,7 +1516,7 @@ async def get_nhtsa_recalls(
     context_notes: str = "",
     raw: bool = False,
 ) -> str:
-    """Look up NHTSA recall data for a vehicle by make/model/year or inventory vehicle ID."""
+    """Look up NHTSA recall data by VIN, make/model/year, or inventory vehicle ID."""
     try:
         cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
             _prepare_cip_orchestration(
@@ -1344,6 +1529,7 @@ async def get_nhtsa_recalls(
         )
         return await get_nhtsa_recalls_impl(
             cip,
+            vin=vin or None,
             make=make or None,
             model=model or None,
             model_year=model_year,
@@ -1368,6 +1554,7 @@ async def get_nhtsa_recalls(
 
 @mcp.tool()
 async def get_nhtsa_complaints(
+    vin: str = "",
     make: str = "",
     model: str = "",
     model_year: int | None = None,
@@ -1378,7 +1565,7 @@ async def get_nhtsa_complaints(
     context_notes: str = "",
     raw: bool = False,
 ) -> str:
-    """Look up NHTSA complaint data by make/model/year or inventory vehicle ID."""
+    """Look up NHTSA complaint data by VIN, make/model/year, or inventory vehicle ID."""
     try:
         cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
             _prepare_cip_orchestration(
@@ -1391,6 +1578,7 @@ async def get_nhtsa_complaints(
         )
         return await get_nhtsa_complaints_impl(
             cip,
+            vin=vin or None,
             make=make or None,
             model=model or None,
             model_year=model_year,
@@ -1415,6 +1603,7 @@ async def get_nhtsa_complaints(
 
 @mcp.tool()
 async def get_nhtsa_safety_ratings(
+    vin: str = "",
     make: str = "",
     model: str = "",
     model_year: int | None = None,
@@ -1425,7 +1614,7 @@ async def get_nhtsa_safety_ratings(
     context_notes: str = "",
     raw: bool = False,
 ) -> str:
-    """Look up NHTSA safety ratings for a vehicle by make/model/year or inventory vehicle ID."""
+    """Look up NHTSA safety ratings by VIN, make/model/year, or inventory vehicle ID."""
     try:
         cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
             _prepare_cip_orchestration(
@@ -1438,6 +1627,7 @@ async def get_nhtsa_safety_ratings(
         )
         return await get_nhtsa_safety_ratings_impl(
             cip,
+            vin=vin or None,
             make=make or None,
             model=model or None,
             model_year=model_year,
