@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from cip_protocol import CIP
 from cip_protocol.orchestration.errors import (
     log_and_return_tool_error as _log_and_return_tool_error,
 )
 from cip_protocol.orchestration.pool import ProviderPool
+from cip_protocol.scaffold.loader import load_scaffold_directory
+from cip_protocol.scaffold.registry import ScaffoldRegistry
 from mcp.server.fastmcp import FastMCP
 
 from auto_mcp.config import AUTO_DOMAIN_CONFIG
@@ -96,6 +100,7 @@ _SCAFFOLD_DIR = str(Path(__file__).parent / "scaffolds")
 _pool = ProviderPool(AUTO_DOMAIN_CONFIG, _SCAFFOLD_DIR)
 
 _escalation_store_ref: object | None = None
+_scaffold_registry_ref: ScaffoldRegistry | None = None
 
 
 def _get_escalation_store():
@@ -109,6 +114,92 @@ def _get_escalation_store():
         if isinstance(store, SqliteVehicleStore):
             _escalation_store_ref = store.enable_escalations()
     return _escalation_store_ref
+
+
+def _get_scaffold_registry() -> ScaffoldRegistry:
+    """Lazy scaffold registry accessor for resources/prompts."""
+    global _scaffold_registry_ref  # noqa: PLW0603
+    if _scaffold_registry_ref is None:
+        reg = ScaffoldRegistry()
+        load_scaffold_directory(_SCAFFOLD_DIR, reg)
+        _scaffold_registry_ref = reg
+    return _scaffold_registry_ref
+
+
+def _compact_scaffold_entry(scaffold: Any) -> dict[str, Any]:
+    """Build a concise, stable scaffold catalog entry."""
+    applicability = scaffold.applicability
+    return {
+        "id": scaffold.id,
+        "display_name": scaffold.display_name,
+        "description": scaffold.description,
+        "tools": list(applicability.tools or []),
+        "intent_signals": list(applicability.intent_signals or []),
+        "keywords": list(applicability.keywords or []),
+        "tags": list(scaffold.tags or []),
+    }
+
+
+def _build_scaffold_catalog_payload() -> dict[str, Any]:
+    reg = _get_scaffold_registry()
+    scaffolds = sorted(reg.all(), key=lambda s: s.id)
+    entries = [_compact_scaffold_entry(s) for s in scaffolds]
+    return {
+        "domain": AUTO_DOMAIN_CONFIG.name,
+        "default_scaffold_id": AUTO_DOMAIN_CONFIG.default_scaffold_id,
+        "count": len(entries),
+        "scaffolds": entries,
+    }
+
+
+def _build_orchestration_entry_payload() -> dict[str, Any]:
+    reg = _get_scaffold_registry()
+    scaffold = reg.get("orchestration_entry")
+    if scaffold is None:
+        return {
+            "error": True,
+            "message": "orchestration_entry scaffold is not available.",
+        }
+
+    return {
+        "orchestration_entry": {
+            "id": scaffold.id,
+            "display_name": scaffold.display_name,
+            "description": scaffold.description,
+            "reasoning_framework": scaffold.reasoning_framework,
+            "domain_knowledge_activation": scaffold.domain_knowledge_activation,
+            "guardrails": {
+                "disclaimers": scaffold.guardrails.disclaimers,
+                "escalation_triggers": scaffold.guardrails.escalation_triggers,
+                "prohibited_actions": scaffold.guardrails.prohibited_actions,
+            },
+            "tags": list(scaffold.tags or []),
+        },
+        "scaffold_catalog": _build_scaffold_catalog_payload(),
+    }
+
+
+@mcp.resource("autocip://scaffolds/catalog")
+def scaffold_catalog_resource() -> dict[str, Any]:
+    """List available scaffold_id values with routing hints for orchestrators."""
+    return _build_scaffold_catalog_payload()
+
+
+@mcp.resource("autocip://orchestration/entry")
+def orchestration_entry_resource() -> dict[str, Any]:
+    """Expose orchestration entry guidance plus the scaffold catalog."""
+    return _build_orchestration_entry_payload()
+
+
+@mcp.prompt()
+def orchestration_entry_prompt() -> str:
+    """Prompt-friendly orchestration briefing with scaffold catalog."""
+    payload = _build_orchestration_entry_payload()
+    return (
+        "Use this orchestration entry and scaffold catalog when selecting "
+        "`scaffold_id` values for AutoCIP tool calls.\n\n"
+        f"{json.dumps(payload, indent=2)}"
+    )
 
 
 def set_cip_override(cip: CIP | None) -> None:

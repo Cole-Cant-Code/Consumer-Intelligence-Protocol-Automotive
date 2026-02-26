@@ -105,6 +105,14 @@ The result: 52 tools, 35 reasoning frameworks, and a guardrail system that runs 
 | `get_autodev_listings` | Fetch listings by VIN or search filters (ZIP/make/model/page/limit) |
 | `get_autodev_vehicle_photos` | Fetch vehicle photo assets by VIN or inventory vehicle ID |
 
+### Orchestration resources
+
+| Resource/Prompt | What it does |
+|------|-------------|
+| `autocip://orchestration/entry` | Exposes orchestration entry guidance with embedded scaffold catalog |
+| `autocip://scaffolds/catalog` | Lists scaffold IDs and routing hints for `scaffold_id` selection |
+| `orchestration_entry_prompt` | Prompt-formatted orchestration briefing and scaffold catalog |
+
 ### NHTSA safety tools
 
 | Tool | What it does |
