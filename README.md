@@ -42,66 +42,215 @@ The result: 52 tools, 35 reasoning frameworks, and a guardrail system that runs 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│            Outer LLM (Claude / GPT)          │
-│                                              │
-│  Holds conversation context. Decides what    │
-│  to ask. Can override scaffold, policy,      │
-│  and provider per tool call.                 │
-└─────────────────────┬────────────────────────┘
-                      │ MCP tool call
-                      ▼
-┌──────────────────────────────────────────────┐
-│              AutoCIP MCP Server              │
-│                                              │
-│  1. Resolve provider (anthropic / openai)    │
-│  2. Fetch data from SQLite store             │
-│  3. Select + load YAML scaffold              │
-│  4. Brief the inner specialist LLM           │
-│  5. Run specialist, get response             │
-│  6. Enforce guardrails (regex + blocklist)   │
-│  7. Return shaped response (or raw JSON)     │
-│                                              │
-│  ┌────────────┬────────────┬──────────────┐  │
-│  │  SQLite    │ Scaffolds  │  Guardrails  │  │
-│  │  vehicles  │ 35 YAML    │  prohibited  │  │
-│  │  leads     │ reasoning  │  phrases,    │  │
-│  │  sales     │ frameworks │  regex,      │  │
-│  │  profiles  │            │  redaction   │  │
-│  └────────────┴────────────┴──────────────┘  │
-└──────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                  Outer LLM (Claude / GPT)                     │
+│                                                               │
+│  Holds full conversation context. Decides which of 52 tools   │
+│  to call and how to steer the specialist on each call.        │
+└───────────────────────────┬───────────────────────────────────┘
+                            │
+              MCP tool call │  override parameters:
+              ──────────────│  ├── provider      (anthropic / openai)
+                            │  ├── scaffold_id   (skip auto-select)
+                            │  ├── policy        (inject constraint)
+                            │  ├── context_notes (cross-turn context)
+                            │  └── raw           (bypass specialist)
+                            ▼
+┌───────────────────────────────────────────────────────────────┐
+│                    AutoCIP MCP Server                         │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 1. RESOLVE PROVIDER                                     │  │
+│  │    ┌───────────────────┐   ┌───────────────────┐        │  │
+│  │    │ Anthropic          │   │ OpenAI             │       │  │
+│  │    │ claude-sonnet-4-6  │   │ gpt-4o             │       │  │
+│  │    │ (default)          │   │                    │       │  │
+│  │    └───────────────────┘   └───────────────────┘        │  │
+│  │    Switchable at runtime or per-call                     │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 2. FETCH DATA                                           │  │
+│  │                                                         │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐  │  │
+│  │  │ SQLite (WAL)  │ │ Auto.dev API │ │ NHTSA API      │  │  │
+│  │  │               │ │              │ │                │  │  │
+│  │  │ vehicles      │ │ VIN decode   │ │ recalls        │  │  │
+│  │  │ leads         │ │ listings     │ │ complaints     │  │  │
+│  │  │ lead_profiles │ │ photos       │ │ safety ratings │  │  │
+│  │  │ sales         │ │ overview     │ │ VIN decode     │  │  │
+│  │  │ escalations   │ │              │ │                │  │  │
+│  │  │ ingestion_log │ │ (key req'd)  │ │ (no auth)      │  │  │
+│  │  └──────────────┘ └──────────────┘ └────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 3. SELECT + LOAD SCAFFOLD                               │  │
+│  │    35 YAML reasoning frameworks                         │  │
+│  │                                                         │  │
+│  │  ┌──────────┬───────────┬──────────┬─────────────────┐  │  │
+│  │  │ Shopper  │ Financial │ Dealer   │ Safety/Engage   │  │  │
+│  │  │          │           │          │                 │  │  │
+│  │  │ search   │ financing │ hotlist  │ nhtsa_safety    │  │  │
+│  │  │ compare  │ scenarios │ aging    │ availability    │  │  │
+│  │  │ details  │ trade_in  │ funnel   │ readiness       │  │  │
+│  │  │ history  │ otd_price │ pricing  │ test_drive      │  │  │
+│  │  │ market   │ insurance │ leads    │ escalation      │  │  │
+│  │  │ similar  │ ownership │ stats    │ autodev_data    │  │  │
+│  │  │ vin      │ warranty  │ analytic │ orchestration   │  │  │
+│  │  └──────────┴───────────┴──────────┴─────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 4. BRIEF SPECIALIST                                     │  │
+│  │    scaffold.framing.role  →  who the specialist is      │  │
+│  │    scaffold.reasoning     →  how to think step-by-step  │  │
+│  │    scaffold.calibration   →  what to include / exclude  │  │
+│  │    + fetched data + policy + context_notes              │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 5. RUN SPECIALIST → 6. ENFORCE GUARDRAILS               │  │
+│  │                                                         │  │
+│  │  Post-generation enforcement (not just prompt-based):   │  │
+│  │  ┌─────────────────┬──────────────┬──────────────────┐  │  │
+│  │  │ Phrase blocklist │ Regex checks │ Redaction        │  │  │
+│  │  │                 │              │                  │  │  │
+│  │  │ purchase        │ APR promises │ violations →     │  │  │
+│  │  │   pressure      │ credit score │ [Removed:        │  │  │
+│  │  │ legal advice    │   diagnoses  │  contains        │  │  │
+│  │  │ mechanical      │ financing    │  prohibited      │  │  │
+│  │  │   guarantees    │   guarantees │  auto advice]    │  │  │
+│  │  └─────────────────┴──────────────┴──────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │ 7. RETURN                                               │  │
+│  │    ├── raw=False → shaped response + disclaimers        │  │
+│  │    └── raw=True  → structured JSON (specialist skipped) │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 **Two LLMs are in play.** The outer LLM (in your chat) holds the full conversation and orchestrates. The inner LLM (the specialist) is a domain expert briefed per-task by a scaffold — it knows cars and financing deeply but has no memory between calls. The outer LLM decides *what* to ask; the specialist decides *how* to answer it.
 
+### Request lifecycle
+
+How a single tool call flows through the system:
+
+```
+┌─────────┐    tool call     ┌──────────┐   resolve    ┌──────────┐
+│  Outer  │ ──────────────→  │ Provider │ ──────────→  │ Anthropic│
+│  LLM    │  + scaffold_id   │ Resolver │              │ or       │
+│         │  + policy        └────┬─────┘              │ OpenAI   │
+└─────────┘                      │                     └────┬─────┘
+     ▲                           ▼                          │
+     │                    ┌──────────┐                      │
+     │                    │ Data     │                      │
+     │                    │ Fetch    │                      │
+     │                    │          │                      │
+     │                    │ SQLite   │                      │
+     │                    │ Auto.dev │                      │
+     │                    │ NHTSA    │                      │
+     │                    └────┬─────┘                      │
+     │                         │                            │
+     │                         ▼                            │
+     │                    ┌──────────┐    brief +    ┌──────┴─────┐
+     │                    │ Scaffold │ ──────────→   │ Specialist │
+     │                    │ Select   │    data       │ LLM        │
+     │                    │ + Load   │               │            │
+     │                    └──────────┘               └──────┬─────┘
+     │                                                      │
+     │                                               response│
+     │                                                      ▼
+     │                                              ┌──────────────┐
+     │              shaped response                 │  Guardrails  │
+     │  ◀────────────────────────────────────────── │  blocklist   │
+     │              or raw JSON                     │  regex       │
+     │                                              │  redaction   │
+     │                                              └──────────────┘
+     │
+     │  if raw=True, skips scaffold + specialist + guardrails entirely
+     │  ◀──────────── structured JSON data ────────────────────────
+```
+
+### Architecture tree
+
 ```text
 AutoCIP Architecture (Tree View)
+
 ├── Outer LLM (Claude / GPT)
 │   ├── Holds conversation context
-│   ├── Chooses MCP tool call
-│   └── Can override scaffold / policy / provider
+│   ├── Chooses from 52 MCP tools across 10 categories
+│   └── Per-call overrides: provider, scaffold_id, policy, context_notes, raw
+│
 ├── AutoCIP MCP Server
+│   │
 │   ├── Provider Resolver
-│   │   ├── anthropic
-│   │   └── openai
-│   ├── SQLite Data Layer
-│   │   ├── vehicles
-│   │   ├── leads
-│   │   ├── sales
-│   │   └── profiles
+│   │   ├── anthropic  →  claude-sonnet-4-6 (default)
+│   │   └── openai     →  gpt-4o
+│   │
+│   ├── Data Layer
+│   │   ├── SQLite (WAL mode)
+│   │   │   ├── vehicles        ── inventory with normalized fields
+│   │   │   ├── leads           ── engagement events, weighted scoring
+│   │   │   ├── lead_profiles   ── aggregated per-lead intent scores
+│   │   │   ├── sales           ── closed-loop outcome tracking
+│   │   │   ├── escalations     ── threshold-crossing alerts
+│   │   │   └── ingestion_log   ── API import dedup + audit
+│   │   ├── Auto.dev API (async)
+│   │   │   ├── VIN decode, listings, photos, overview
+│   │   │   └── Bulk import with NHTSA VIN enrichment
+│   │   ├── NHTSA API (async, no auth)
+│   │   │   └── Recalls, complaints, safety ratings, VIN decode
+│   │   └── In-Memory Journey
+│   │       └── Saves, favorites, reservations (session-scoped)
+│   │
 │   ├── Scaffold Engine (35 YAML frameworks)
-│   │   ├── Select scaffold by task
-│   │   └── Brief inner specialist LLM
-│   ├── Guardrail Engine
-│   │   ├── phrase blocklist
-│   │   ├── regex checks
-│   │   └── redaction
-│   └── Output Mode
-│       ├── shaped natural-language response
-│       └── raw JSON (`raw=True`)
-└── Tool Surface
-    ├── 52 MCP tools
-    └── 10 categories (shopper, dealer, escalation, etc.)
+│   │   ├── Shopper       (9)  search, compare, details, history, market,
+│   │   │                      similar, vin, location, general_advice
+│   │   ├── Financial     (7)  financing, scenarios, trade_in, otd_price,
+│   │   │                      ownership, insurance, warranty
+│   │   ├── Dealer        (9)  hotlist, lead_detail, analytics, aging,
+│   │   │                      pricing, funnel, stats, + dealer variants
+│   │   ├── Safety        (1)  nhtsa_safety (recalls + complaints + ratings)
+│   │   ├── Engagement    (4)  availability, readiness, test_drive, escalation
+│   │   ├── Integration   (1)  autodev_data (VIN, listings, photos)
+│   │   └── Orchestration (1)  orchestration_entry (pre-tool routing)
+│   │
+│   ├── Guardrail Engine (post-generation)
+│   │   ├── Phrase blocklist  →  purchase pressure, legal advice, mech. guarantees
+│   │   ├── Regex policies    →  APR promises, credit score diagnoses
+│   │   └── Redaction         →  [Removed: contains prohibited automotive advice]
+│   │
+│   └── Output Modes
+│       ├── raw=False  →  shaped natural-language + disclaimers
+│       └── raw=True   →  structured JSON (specialist bypassed entirely)
+│
+├── Lead Scoring Pipeline
+│   ├── Events weighted:  view(1) compare(3) contact(4) availability(5)
+│   │                     financing(6) test_drive(8) reserve(9) deposit(10)
+│   ├── Identity stitching:  lead_id + customer_id + session_id
+│   ├── Funnel stages:  discovery → consideration → financial → intent → outcome
+│   └── Escalations:  cold→warm (≥10)  cold→hot (≥22)  warm→hot
+│       └── Synchronous detection inside record_lead(), deduped, stored
+│
+└── Tool Surface (52 tools, 10 categories)
+    ├── Shopper          (17)  search, location, VIN, details, compare, similar,
+    │                          history, market, financing, scenarios, trade-in,
+    │                          OTD, ownership, insurance, warranty, availability,
+    │                          readiness
+    ├── Auto.dev          (4)  overview, VIN decode, listings, photos
+    ├── NHTSA Safety      (3)  recalls, complaints, safety ratings
+    ├── Engagement        (9)  save search/favorites, reserve, contact dealer,
+    │                          deposit, test drive, service, follow-up
+    ├── Dealer Intel      (8)  hot leads, lead detail, analytics, aging,
+    │                          pricing, funnel, stats, record sale
+    ├── Escalation        (2)  get/acknowledge escalations
+    ├── Data Management   (6)  upsert, bulk upsert, remove, expire,
+    │                          record lead, bulk import
+    ├── Provider          (2)  set/get LLM provider
+    └── Resources/Prompts (3)  orchestration entry, scaffold catalog
 ```
 
 ---
@@ -335,20 +484,48 @@ This means the outer LLM isn't just calling tools — it's *directing* the speci
 
 Engagement events are weighted to produce an intent score per lead:
 
-| Action | Weight |
-|--------|--------|
-| Viewed listing | 1.0 |
-| Compared vehicles | 3.0 |
-| Contacted dealer | 4.0 |
-| Checked availability | 5.0 |
-| Ran financing | 6.0 |
-| Scheduled test drive | 8.0 |
-| Reserved vehicle | 9.0 |
-| Submitted deposit | 10.0 |
+```
+                         LEAD SCORING PIPELINE
 
-Leads are stitched across sessions via `lead_id`, `customer_id`, and `session_id`. The funnel tracks five stages: **discovery** → **consideration** → **financial** → **intent** → **outcome**.
+  Event                    Weight    Funnel Stage
+  ─────────────────────    ──────    ──────────────────
+  view listing              +1       discovery
+  search / filter           +1       discovery
+  compare vehicles          +3       consideration
+  view details              +2       consideration
+  contact dealer            +4       consideration
+  check availability        +5       financial
+  run financing             +6       financial
+  schedule test drive       +8       intent
+  reserve vehicle           +9       intent
+  submit deposit           +10       outcome
 
-When a lead's cumulative score crosses a threshold (cold → warm at 10, warm → hot at 22), an **escalation** is generated synchronously inside `record_lead()` — no polling, no background threads. Escalations are stored, deduplicated, and surfaced through `get_escalations` so dealers get alerted the moment a lead heats up.
+  Cumulative Score    ─────────────────────────────→
+
+  0         10              22                    ∞
+  │──────────│───────────────│─────────────────────│
+  │  COLD    │    WARM       │       HOT           │
+  │          │               │                     │
+  │          ▼               ▼                     │
+  │     ┌─────────┐    ┌─────────┐                 │
+  │     │ESCALATE │    │ESCALATE │                 │
+  │     │cold →   │    │cold/warm│                 │
+  │     │warm     │    │→ hot    │                 │
+  │     └─────────┘    └─────────┘                 │
+  │                                                │
+  │  Detected synchronously inside record_lead()   │
+  │  Deduped by (lead_id, escalation_type)         │
+  │  Stored in SQLite, surfaced via get_escalations│
+
+  Identity Stitching:
+  ┌──────────┐   ┌──────────────┐   ┌──────────────┐
+  │ lead_id  │ + │ customer_id  │ + │ session_id   │
+  │ (primary)│   │ (cross-visit)│   │ (single-sit) │
+  └──────────┘   └──────────────┘   └──────────────┘
+        └──────── merged into lead_profiles ────────┘
+```
+
+The funnel tracks five stages: **discovery** → **consideration** → **financial** → **intent** → **outcome**. When a lead's cumulative score crosses a threshold, an escalation is generated synchronously — no polling, no background threads. Escalations are stored, deduplicated, and surfaced through `get_escalations` so dealers get alerted the moment a lead heats up.
 
 ---
 
