@@ -19,9 +19,17 @@ from typing import (
 from cip_protocol.engagement.scoring import (
     LeadEvent,
     LeadScoringConfig,
+)
+from cip_protocol.engagement.scoring import (
     compute_lead_score as _cip_compute_lead_score,
+)
+from cip_protocol.engagement.scoring import (
     infer_lead_status as _cip_infer_lead_status,
+)
+from cip_protocol.engagement.scoring import (
     lead_score_band as _cip_lead_score_band,
+)
+from cip_protocol.engagement.scoring import (
     recency_multiplier as _cip_recency_multiplier,
 )
 

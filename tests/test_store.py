@@ -723,8 +723,11 @@ class TestCIPDelegation:
         """_compute_lead_score should produce the same result as CIP's compute_lead_score."""
         from cip_protocol.engagement.scoring import (
             LeadEvent as CIPLeadEvent,
+        )
+        from cip_protocol.engagement.scoring import (
             compute_lead_score as cip_score,
         )
+
         from auto_mcp.data.store import AUTO_SCORING_CONFIG
 
         store.upsert(SAMPLE_VEHICLE)
@@ -747,6 +750,7 @@ class TestCIPDelegation:
     def test_status_inference_matches_cip(self, store: SqliteVehicleStore):
         """Manual threshold checks replaced by infer_lead_status should behave identically."""
         from cip_protocol.engagement.scoring import infer_lead_status
+
         from auto_mcp.data.store import AUTO_SCORING_CONFIG
 
         # Test all threshold boundaries

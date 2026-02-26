@@ -52,6 +52,11 @@ from auto_mcp.tools.ingestion import (
 )
 from auto_mcp.tools.location_search import search_by_location_impl
 from auto_mcp.tools.market import get_market_price_context_impl
+from auto_mcp.tools.nhtsa import (
+    get_nhtsa_complaints_impl,
+    get_nhtsa_recalls_impl,
+    get_nhtsa_safety_ratings_impl,
+)
 from auto_mcp.tools.ownership import (
     estimate_cost_of_ownership_impl,
     estimate_insurance_impl,
@@ -1309,6 +1314,147 @@ async def get_warranty_info(
             exc=exc,
             user_message=(
                 "I am having trouble retrieving warranty information right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_nhtsa_recalls(
+    make: str = "",
+    model: str = "",
+    model_year: int | None = None,
+    vehicle_id: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Look up NHTSA recall data for a vehicle by make/model/year or inventory vehicle ID."""
+    try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_nhtsa_recalls",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_nhtsa_recalls_impl(
+            cip,
+            make=make or None,
+            model=model or None,
+            model_year=model_year,
+            vehicle_id=vehicle_id or None,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_nhtsa_recalls",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving NHTSA recall data right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_nhtsa_complaints(
+    make: str = "",
+    model: str = "",
+    model_year: int | None = None,
+    vehicle_id: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Look up NHTSA complaint data by make/model/year or inventory vehicle ID."""
+    try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_nhtsa_complaints",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_nhtsa_complaints_impl(
+            cip,
+            make=make or None,
+            model=model or None,
+            model_year=model_year,
+            vehicle_id=vehicle_id or None,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_nhtsa_complaints",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving NHTSA complaint data right now. "
+                "Please try again in a moment."
+            ),
+        )
+
+
+@mcp.tool()
+async def get_nhtsa_safety_ratings(
+    make: str = "",
+    model: str = "",
+    model_year: int | None = None,
+    vehicle_id: str = "",
+    provider: str = "",
+    scaffold_id: str = "",
+    policy: str = "",
+    context_notes: str = "",
+    raw: bool = False,
+) -> str:
+    """Look up NHTSA safety ratings for a vehicle by make/model/year or inventory vehicle ID."""
+    try:
+        cip, resolved_scaffold_id, resolved_policy, resolved_context_notes = (
+            _prepare_cip_orchestration(
+                tool_name="get_nhtsa_safety_ratings",
+                provider=provider,
+                scaffold_id=scaffold_id,
+                policy=policy,
+                context_notes=context_notes,
+            )
+        )
+        return await get_nhtsa_safety_ratings_impl(
+            cip,
+            make=make or None,
+            model=model or None,
+            model_year=model_year,
+            vehicle_id=vehicle_id or None,
+            scaffold_id=resolved_scaffold_id,
+            policy=resolved_policy,
+            context_notes=resolved_context_notes,
+            raw=raw,
+        )
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return _log_and_return_tool_error(
+            tool_name="get_nhtsa_safety_ratings",
+            exc=exc,
+            user_message=(
+                "I am having trouble retrieving NHTSA safety rating data right now. "
                 "Please try again in a moment."
             ),
         )

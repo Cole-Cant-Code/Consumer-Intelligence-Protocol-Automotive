@@ -13,6 +13,7 @@ from typing import Any
 
 import aiohttp
 
+from auto_mcp.clients.nhtsa import SHARED_NHTSA_CACHE, NHTSAClient
 from auto_mcp.data.inventory import get_store
 from auto_mcp.normalization import (
     normalize_body_type as _canonical_body_type,
@@ -167,41 +168,6 @@ class AutoDevClient:
                     return None
                 return await resp.json()
         except aiohttp.ClientError:
-            return None
-
-
-class NHTSAClient:
-    """Client for NHTSA vPIC API (free, unlimited)."""
-
-    BASE_URL = "https://vpic.nhtsa.dot.gov/api/vehicles"
-
-    def __init__(self) -> None:
-        self.session: aiohttp.ClientSession | None = None
-
-    async def __aenter__(self) -> NHTSAClient:
-        self.session = aiohttp.ClientSession()
-        return self
-
-    async def __aexit__(self, *args: Any) -> None:
-        if self.session:
-            await self.session.close()
-
-    async def decode_vin(self, vin: str) -> dict[str, Any] | None:
-        if not self.session:
-            raise RuntimeError("Client not entered as context manager")
-
-        try:
-            async with self.session.get(
-                f"{self.BASE_URL}/DecodeVINValuesExtended/{vin}",
-                params={"format": "json"},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                results = data.get("Results", [])
-                return results[0] if results else None
-        except aiohttp.ClientError as e:
-            logger.error("NHTSA API error: %s", e)
             return None
 
 
@@ -387,7 +353,7 @@ class IngestionPipeline:
             }
             return before != after
 
-        async with NHTSAClient() as client:
+        async with NHTSAClient(cache=SHARED_NHTSA_CACHE) as client:
             results = await asyncio.gather(
                 *(_enrich_one(v, client) for v in vehicles),
                 return_exceptions=True,

@@ -38,6 +38,9 @@ CIP_ROUTED_TOOLS = [
     "get_pricing_opportunities",
     "get_funnel_metrics",
     "get_escalations",
+    "get_nhtsa_recalls",
+    "get_nhtsa_complaints",
+    "get_nhtsa_safety_ratings",
 ]
 
 NON_CIP_TOOLS = [

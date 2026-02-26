@@ -5,7 +5,7 @@ Scaffold-driven MCP server that turns car conversations into real outcomes — f
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL--1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blueviolet.svg)](https://modelcontextprotocol.io)
-[![Tests: 326](https://img.shields.io/badge/tests-326-brightgreen.svg)](tests/)
+[![Tests: 371](https://img.shields.io/badge/tests-371-brightgreen.svg)](tests/)
 
 ```
 You:     "Compare the Camry and Accord, then show me financing at 48 vs 72 months with $5k down."
@@ -29,7 +29,7 @@ AutoCIP separates **what the AI knows** from **how it thinks about it**.
 
 Every tool call is routed through a **scaffold** — a YAML reasoning framework that tells a specialist LLM how to approach a specific task. A comparison scaffold structures trade-off analysis. A financing scaffold enforces estimate framing and blocks guarantee language. A dealer lead scaffold prioritizes by intent score and recency.
 
-The result: 45 tools, 32 reasoning frameworks, and a guardrail system that runs *after* generation — not just in the prompt.
+The result: 48 tools, 34 reasoning frameworks, and a guardrail system that runs *after* generation — not just in the prompt.
 
 ---
 
@@ -72,7 +72,7 @@ The result: 45 tools, 32 reasoning frameworks, and a guardrail system that runs 
 
 ## Tools
 
-45 MCP tools across 8 categories. Every CIP-routed tool accepts `raw=True` to bypass the specialist and get structured JSON directly.
+48 MCP tools across 9 categories. Every CIP-routed tool accepts `raw=True` to bypass the specialist and get structured JSON directly.
 
 ### Shopper tools
 
@@ -95,6 +95,14 @@ The result: 45 tools, 32 reasoning frameworks, and a guardrail system that runs 
 | `get_warranty_info` | Warranty coverage windows |
 | `check_availability` | Stock check with dealer info |
 | `assess_purchase_readiness` | Readiness assessment based on budget, financing, trade-in status |
+
+### NHTSA safety tools
+
+| Tool | What it does |
+|------|-------------|
+| `get_nhtsa_recalls` | NHTSA recall data by make/model/year or inventory vehicle ID |
+| `get_nhtsa_complaints` | NHTSA consumer complaints by make/model/year or inventory vehicle ID |
+| `get_nhtsa_safety_ratings` | NHTSA crash test safety ratings by make/model/year or inventory vehicle ID |
 
 ### Engagement tools
 
@@ -189,10 +197,10 @@ guardrails:
 
 The `reasoning_framework` enforces structure. The `output_calibration` controls what appears. The `guardrails` catch violations after generation.
 
-32 scaffolds covering search, comparison, financing, market pricing, lead analysis, inventory aging, funnel metrics, escalation alerts, and more — including dealer-specific variants that shift tone and detail level for professional use.
+34 scaffolds covering search, comparison, financing, market pricing, NHTSA safety data, lead analysis, inventory aging, funnel metrics, escalation alerts, and more — including dealer-specific variants that shift tone and detail level for professional use.
 
 <details>
-<summary>All 32 scaffolds</summary>
+<summary>All 34 scaffolds</summary>
 
 | Scaffold | Purpose |
 |----------|---------|
@@ -212,6 +220,8 @@ The `reasoning_framework` enforces structure. The `output_calibration` controls 
 | `location_search` | Geo-search result framing |
 | `market_price_context` | Market positioning for shoppers |
 | `market_price_context_dealer` | Market positioning for dealers |
+| `nhtsa_safety` | NHTSA recalls, complaints, and safety ratings presentation |
+| `orchestration_entry` | Lightweight pre-tool orchestration assessment |
 | `out_the_door_price` | Total cost breakdown |
 | `ownership_cost` | Long-term cost projection |
 | `pricing_opportunities` | Pricing action recommendations |
@@ -298,7 +308,7 @@ cd Consumer-Intelligence-Protocol-Automotive
 uv sync --all-extras
 
 # Run tests
-uv run pytest tests/ -v    # 326 tests
+uv run pytest tests/ -v    # 371 tests
 
 # Start the server
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -369,7 +379,7 @@ claude mcp add-json autocip '{
 
 ```
 auto_mcp/
-├── server.py              # FastMCP entry point — 45 tools, provider pool, orchestration wiring
+├── server.py              # FastMCP entry point — 48 tools, provider pool, orchestration wiring
 ├── config.py              # DomainConfig — prohibited patterns, regex guardrails, redaction
 ├── normalization.py       # Canonical field normalization (price, body type, fuel type) — shared by ingestion paths
 ├── data/
@@ -377,7 +387,9 @@ auto_mcp/
 │   ├── inventory.py       # Public data facade (singleton)
 │   ├── journey.py         # In-memory customer journey state (saves, favorites, reservations)
 │   └── seed.py            # 25+ demo vehicles across 7 Texas locations
-├── tools/                 # 21 modules, one per tool family
+├── clients/
+│   └── nhtsa.py           # Shared async NHTSA API client (recalls, complaints, ratings, VIN decode)
+├── tools/                 # 22 modules, one per tool family
 │   ├── orchestration.py   # run_tool_with_orchestration() — scaffold selection + raw bypass
 │   ├── search.py          # Vehicle search
 │   ├── compare.py         # Side-by-side comparison
@@ -397,12 +409,13 @@ auto_mcp/
 │   ├── dealer_intelligence.py  # Leads, aging, pricing, funnel
 │   ├── escalation.py      # Escalation alerts + acknowledgement
 │   ├── sales.py           # Sale recording
+│   ├── nhtsa.py           # NHTSA recalls, complaints, safety ratings
 │   ├── ingestion.py       # CRUD + VIN normalization + API import
 │   └── stats.py           # Inventory + lead analytics
 ├── escalation/
 │   ├── detector.py        # Pure threshold-crossing detection logic
 │   └── store.py           # SQLite escalation persistence + deduplication
-├── scaffolds/             # 32 YAML reasoning frameworks
+├── scaffolds/             # 34 YAML reasoning frameworks
 │   ├── vehicle_comparison.yaml
 │   ├── financing_scenarios.yaml
 │   ├── lead_hotlist.yaml
@@ -417,7 +430,7 @@ auto_mcp/
 
 ```bash
 uv run ruff check auto_mcp tests    # lint
-uv run pytest tests -q               # 326 tests
+uv run pytest tests -q               # 371 tests
 uv run pytest tests -v --tb=short    # verbose with tracebacks
 ```
 
