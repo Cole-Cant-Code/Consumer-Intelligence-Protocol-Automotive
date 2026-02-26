@@ -317,6 +317,13 @@ class SqliteVehicleStore:
                 ON vehicles(price);
             CREATE INDEX IF NOT EXISTS idx_vehicles_year
                 ON vehicles(year);
+            -- Composite covering indexes for common multi-column search patterns
+            CREATE INDEX IF NOT EXISTS idx_vehicles_make_body_price
+                ON vehicles(make COLLATE NOCASE, body_type COLLATE NOCASE, price);
+            CREATE INDEX IF NOT EXISTS idx_vehicles_body_fuel_price
+                ON vehicles(body_type COLLATE NOCASE, fuel_type COLLATE NOCASE, price);
+            CREATE INDEX IF NOT EXISTS idx_vehicles_make_model_year
+                ON vehicles(make COLLATE NOCASE, model COLLATE NOCASE, year);
         """)
 
         # Migration: add new columns to existing databases
@@ -450,6 +457,11 @@ class SqliteVehicleStore:
                 ON leads(session_id);
             CREATE INDEX IF NOT EXISTS idx_leads_source_channel
                 ON leads(source_channel);
+            -- Composite indexes for lead scoring and analytics hot paths
+            CREATE INDEX IF NOT EXISTS idx_leads_lead_id_created
+                ON leads(lead_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_leads_vehicle_created
+                ON leads(vehicle_id, created_at);
         """)
 
     # ── Helpers ────────────────────────────────────────────────────
@@ -595,57 +607,56 @@ class SqliteVehicleStore:
 
     @staticmethod
     def _vehicle_to_row(vehicle: dict[str, Any], *, updated_at: str) -> tuple[Any, ...]:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        vin = SqliteVehicleStore._as_text(vehicle.get("vin", "")).upper()
+        # Local refs to avoid repeated class attribute lookups (33 calls per row)
+        _t = SqliteVehicleStore._as_text
+        _i = SqliteVehicleStore._as_int
+        _f = SqliteVehicleStore._as_float
+        _of = SqliteVehicleStore._as_optional_float
+        _b = SqliteVehicleStore._as_bool
+        _l = SqliteVehicleStore._as_list
+        g = vehicle.get
 
-        expires_at = vehicle.get("expires_at", "")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        vin = _t(g("vin", "")).upper()
+
+        expires_at = g("expires_at", "")
         if not expires_at:
-            ttl_days = max(
-                0,
-                SqliteVehicleStore._as_int(
-                    vehicle.get("ttl_days", DEFAULT_TTL_DAYS),
-                    DEFAULT_TTL_DAYS,
-                ),
-            )
+            ttl_days = max(0, _i(g("ttl_days", DEFAULT_TTL_DAYS), DEFAULT_TTL_DAYS))
             expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat()
 
         return (
-            SqliteVehicleStore._as_text(vehicle.get("id", "")),
-            SqliteVehicleStore._as_int(vehicle.get("year", 0)),
-            SqliteVehicleStore._as_text(vehicle.get("make", "")),
-            SqliteVehicleStore._as_text(vehicle.get("model", "")),
-            SqliteVehicleStore._as_text(vehicle.get("trim", "")),
-            SqliteVehicleStore._as_text(vehicle.get("body_type", "")),
-            SqliteVehicleStore._as_float(vehicle.get("price", 0)),
-            SqliteVehicleStore._as_int(vehicle.get("mileage", 0)),
-            SqliteVehicleStore._as_text(vehicle.get("exterior_color", "")),
-            SqliteVehicleStore._as_text(vehicle.get("interior_color", "")),
-            SqliteVehicleStore._as_text(vehicle.get("fuel_type", "")),
-            SqliteVehicleStore._as_int(vehicle.get("mpg_city", 0)),
-            SqliteVehicleStore._as_int(vehicle.get("mpg_highway", 0)),
-            SqliteVehicleStore._as_text(vehicle.get("engine", "")),
-            SqliteVehicleStore._as_text(vehicle.get("transmission", "")),
-            SqliteVehicleStore._as_text(vehicle.get("drivetrain", "")),
-            json.dumps(SqliteVehicleStore._as_list(vehicle.get("features", []))),
-            SqliteVehicleStore._as_int(vehicle.get("safety_rating", 0)),
-            SqliteVehicleStore._as_text(vehicle.get("dealer_name", "")),
-            SqliteVehicleStore._as_text(vehicle.get("dealer_location", "")),
-            SqliteVehicleStore._as_text(vehicle.get("availability_status", "in_stock")),
+            _t(g("id", "")),
+            _i(g("year", 0)),
+            _t(g("make", "")),
+            _t(g("model", "")),
+            _t(g("trim", "")),
+            _t(g("body_type", "")),
+            _f(g("price", 0)),
+            _i(g("mileage", 0)),
+            _t(g("exterior_color", "")),
+            _t(g("interior_color", "")),
+            _t(g("fuel_type", "")),
+            _i(g("mpg_city", 0)),
+            _i(g("mpg_highway", 0)),
+            _t(g("engine", "")),
+            _t(g("transmission", "")),
+            _t(g("drivetrain", "")),
+            json.dumps(_l(g("features", []))),
+            _i(g("safety_rating", 0)),
+            _t(g("dealer_name", "")),
+            _t(g("dealer_location", "")),
+            _t(g("availability_status", "in_stock")),
             vin,
-            # New geo fields
-            SqliteVehicleStore._as_text(vehicle.get("dealer_zip", "")),
-            SqliteVehicleStore._as_optional_float(vehicle.get("latitude")),
-            SqliteVehicleStore._as_optional_float(vehicle.get("longitude")),
-            # Source tracking
-            SqliteVehicleStore._as_text(vehicle.get("source", "seed"), "seed"),
-            SqliteVehicleStore._as_text(vehicle.get("source_url", "")),
-            # TTL fields
-            SqliteVehicleStore._as_text(vehicle.get("ingested_at", "")) or now_iso,
+            _t(g("dealer_zip", "")),
+            _of(g("latitude")),
+            _of(g("longitude")),
+            _t(g("source", "seed"), "seed"),
+            _t(g("source_url", "")),
+            _t(g("ingested_at", "")) or now_iso,
             expires_at,
-            SqliteVehicleStore._as_text(vehicle.get("last_verified", "")) or now_iso,
-            # Platform
-            1 if SqliteVehicleStore._as_bool(vehicle.get("is_featured", False)) else 0,
-            SqliteVehicleStore._as_int(vehicle.get("lead_count", 0)),
+            _t(g("last_verified", "")) or now_iso,
+            1 if _b(g("is_featured", False)) else 0,
+            _i(g("lead_count", 0)),
             updated_at,
         )
 
@@ -1089,6 +1100,62 @@ class SqliteVehicleStore:
             rows = self._conn.execute(sql, [*params, limit, offset]).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
+    def search_page_with_count(
+        self,
+        *,
+        make: str | None = None,
+        model: str | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        price_min: float | None = None,
+        price_max: float | None = None,
+        body_type: str | None = None,
+        fuel_type: str | None = None,
+        dealer_location: str | None = None,
+        dealer_zip: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Single-query windowed search: returns (total_count, page_rows).
+
+        Uses COUNT(*) OVER() to get total in the same query as the page,
+        eliminating the duplicate WHERE clause evaluation.
+        """
+        if limit <= 0:
+            return 0, []
+
+        where, params = self._build_filters(
+            make=make,
+            model=model,
+            year_min=year_min,
+            year_max=year_max,
+            price_min=price_min,
+            price_max=price_max,
+            body_type=body_type,
+            fuel_type=fuel_type,
+            dealer_location=dealer_location,
+            dealer_zip=dealer_zip,
+        )
+        sql = (
+            f"SELECT {PUBLIC_COLUMNS}, COUNT(*) OVER() AS _total "
+            f"FROM vehicles WHERE {where} "
+            "ORDER BY id LIMIT ? OFFSET ?"
+        )  # noqa: S608
+        with self._lock:
+            rows = self._conn.execute(sql, [*params, limit, offset]).fetchall()
+
+        if not rows:
+            # No rows in page — need separate count for total
+            total = self.count_filtered(
+                make=make, model=model, year_min=year_min, year_max=year_max,
+                price_min=price_min, price_max=price_max, body_type=body_type,
+                fuel_type=fuel_type, dealer_location=dealer_location, dealer_zip=dealer_zip,
+            )
+            return total, []
+
+        total = rows[0]["_total"]
+        return total, [self._row_to_dict(r) for r in rows]
+
     def upsert(self, vehicle: dict[str, Any]) -> None:
         now = self._now()
         with self._lock:
@@ -1216,10 +1283,6 @@ class SqliteVehicleStore:
         now_dt = datetime.now(timezone.utc)
         now_iso = now_dt.isoformat()
 
-        vehicle = self.get(vehicle_id)
-        if not vehicle:
-            raise ValueError(f"Vehicle {vehicle_id} not found")
-
         normalized_source = source_channel.strip() or "direct"
         normalized_customer_id = customer_id.strip()
         normalized_session_id = session_id.strip()
@@ -1227,7 +1290,15 @@ class SqliteVehicleStore:
         normalized_customer_contact = customer_contact.strip().lower()
         resolved_event_meta = event_meta if isinstance(event_meta, dict) else {}
 
+        # Single lock acquisition for the entire operation (vehicle lookup + lead insert + score)
         with self._lock:
+            row = self._conn.execute(
+                f"SELECT {PUBLIC_COLUMNS} FROM vehicles WHERE id = ?", (vehicle_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Vehicle {vehicle_id} not found")
+            vehicle = self._row_to_dict(row)
+
             resolved_lead_id = self._resolve_or_create_lead_profile(
                 vehicle_id=vehicle_id,
                 now_iso=now_iso,
@@ -1377,49 +1448,63 @@ class SqliteVehicleStore:
                 (min_score, since, dealer_zip, dealer_zip, limit),
             ).fetchall()
 
-            hot_leads: list[dict[str, Any]] = []
-            for row in rows:
-                top_actions = self._conn.execute(
-                    """SELECT action, COUNT(*) as cnt
-                       FROM leads
-                       WHERE lead_id = ? AND created_at > ?
-                       GROUP BY action
-                       ORDER BY cnt DESC, action ASC
-                       LIMIT 3""",
-                    (row["id"], since),
-                ).fetchall()
-                top_vehicles = self._conn.execute(
-                    """SELECT vehicle_id, COUNT(*) as cnt
-                       FROM leads
-                       WHERE lead_id = ? AND created_at > ?
-                       GROUP BY vehicle_id
-                       ORDER BY cnt DESC, vehicle_id ASC
-                       LIMIT 3""",
-                    (row["id"], since),
-                ).fetchall()
+            if not rows:
+                return []
 
-                hot_leads.append(
-                    {
-                        "lead_id": row["id"],
-                        "customer_name": row["customer_name"],
-                        "customer_contact": row["customer_contact"],
-                        "status": row["status"],
-                        "score": round(float(row["score"]), 2),
-                        "score_band": self._lead_score_band(float(row["score"])),
-                        "last_activity_at": row["last_activity_at"],
-                        "last_vehicle_id": row["last_vehicle_id"],
-                        "dealer_zip": row["vehicle_dealer_zip"] or "",
-                        "dealer_name": row["vehicle_dealer_name"] or "",
-                        "top_actions": [
-                            {"action": item["action"], "count": item["cnt"]}
-                            for item in top_actions
-                        ],
-                        "top_vehicles": [
-                            {"vehicle_id": item["vehicle_id"], "count": item["cnt"]}
-                            for item in top_vehicles
-                        ],
-                    }
-                )
+            # Batch sub-queries: fetch all lead actions and vehicles for all leads at once
+            # instead of 2 queries per lead (N+1 → 2 queries total).
+            lead_ids = [row["id"] for row in rows]
+            placeholders = ",".join("?" for _ in lead_ids)
+
+            all_actions = self._conn.execute(
+                f"""SELECT lead_id, action, COUNT(*) as cnt
+                    FROM leads
+                    WHERE lead_id IN ({placeholders}) AND created_at > ?
+                    GROUP BY lead_id, action
+                    ORDER BY lead_id, cnt DESC, action ASC""",
+                [*lead_ids, since],
+            ).fetchall()
+
+            all_vehicles = self._conn.execute(
+                f"""SELECT lead_id, vehicle_id, COUNT(*) as cnt
+                    FROM leads
+                    WHERE lead_id IN ({placeholders}) AND created_at > ?
+                    GROUP BY lead_id, vehicle_id
+                    ORDER BY lead_id, cnt DESC, vehicle_id ASC""",
+                [*lead_ids, since],
+            ).fetchall()
+
+        # Dict assembly outside the lock — data is already fetched
+        actions_by_lead: dict[str, list[dict[str, Any]]] = {}
+        for item in all_actions:
+            actions_by_lead.setdefault(item["lead_id"], []).append(
+                {"action": item["action"], "count": item["cnt"]}
+            )
+        vehicles_by_lead: dict[str, list[dict[str, Any]]] = {}
+        for item in all_vehicles:
+            vehicles_by_lead.setdefault(item["lead_id"], []).append(
+                {"vehicle_id": item["vehicle_id"], "count": item["cnt"]}
+            )
+
+        hot_leads: list[dict[str, Any]] = []
+        for row in rows:
+            lid = row["id"]
+            hot_leads.append(
+                {
+                    "lead_id": lid,
+                    "customer_name": row["customer_name"],
+                    "customer_contact": row["customer_contact"],
+                    "status": row["status"],
+                    "score": round(float(row["score"]), 2),
+                    "score_band": self._lead_score_band(float(row["score"])),
+                    "last_activity_at": row["last_activity_at"],
+                    "last_vehicle_id": row["last_vehicle_id"],
+                    "dealer_zip": row["vehicle_dealer_zip"] or "",
+                    "dealer_name": row["vehicle_dealer_name"] or "",
+                    "top_actions": actions_by_lead.get(lid, [])[:3],
+                    "top_vehicles": vehicles_by_lead.get(lid, [])[:3],
+                }
+            )
 
         return hot_leads
 
@@ -1531,39 +1616,28 @@ class SqliteVehicleStore:
         since_7d = (now_dt - timedelta(days=7)).isoformat()
         since_30d = (now_dt - timedelta(days=30)).isoformat()
 
+        # Single LEFT JOIN query instead of 2 separate queries + Python-side dict merge
         with self._lock:
-            if dealer_zip:
-                rows = self._conn.execute(
-                    """SELECT id, year, make, model, trim, body_type, price, mileage,
-                              dealer_name, dealer_zip, availability_status,
-                              ingested_at, updated_at
-                       FROM vehicles
-                       WHERE dealer_zip = ?""",
-                    (dealer_zip,),
-                ).fetchall()
-            else:
-                rows = self._conn.execute(
-                    """SELECT id, year, make, model, trim, body_type, price, mileage,
-                              dealer_name, dealer_zip, availability_status,
-                              ingested_at, updated_at
-                       FROM vehicles""",
-                ).fetchall()
-
-            lead_rows = self._conn.execute(
-                """SELECT vehicle_id,
-                          SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS leads_7d,
-                          SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS leads_30d
-                   FROM leads
-                   GROUP BY vehicle_id""",
-                (since_7d, since_30d),
+            zip_clause = "WHERE v.dealer_zip = ?" if dealer_zip else ""
+            zip_params = [dealer_zip] if dealer_zip else []
+            rows = self._conn.execute(
+                f"""SELECT v.id, v.year, v.make, v.model, v.trim, v.body_type,
+                          v.price, v.mileage, v.dealer_name, v.dealer_zip,
+                          v.availability_status, v.ingested_at, v.updated_at,
+                          COALESCE(ls.leads_7d, 0) AS leads_7d,
+                          COALESCE(ls.leads_30d, 0) AS leads_30d
+                   FROM vehicles v
+                   LEFT JOIN (
+                       SELECT vehicle_id,
+                              SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) AS leads_7d,
+                              COUNT(*) AS leads_30d
+                       FROM leads
+                       WHERE created_at > ?
+                       GROUP BY vehicle_id
+                   ) ls ON ls.vehicle_id = v.id
+                   {zip_clause}""",
+                [since_7d, since_30d, *zip_params],
             ).fetchall()
-
-        lead_map: dict[str, dict[str, int]] = {}
-        for row in lead_rows:
-            lead_map[row["vehicle_id"]] = {
-                "leads_7d": int(row["leads_7d"] or 0),
-                "leads_30d": int(row["leads_30d"] or 0),
-            }
 
         units: list[dict[str, Any]] = []
         summary_by_body: dict[str, dict[str, Any]] = {}
@@ -1572,9 +1646,8 @@ class SqliteVehicleStore:
             if unknown_age:
                 age_days, unknown_age = self._days_since(row["updated_at"], now=now_dt)
 
-            lead_stats = lead_map.get(row["id"], {"leads_7d": 0, "leads_30d": 0})
-            leads_7d = lead_stats["leads_7d"]
-            leads_30d = lead_stats["leads_30d"]
+            leads_7d = int(row["leads_7d"])
+            leads_30d = int(row["leads_30d"])
             if leads_7d >= 5:
                 velocity = "high"
             elif leads_7d >= 2:
@@ -1689,30 +1762,31 @@ class SqliteVehicleStore:
             for row in lead_rows
         }
 
+        # Pre-group peer prices by (make, model) and (body_type, fuel_type) for O(n) lookup
+        # instead of O(n²) inner loop per vehicle.
+        _peer_by_mm: dict[tuple[str, str], list[tuple[str, float]]] = {}
+        _peer_by_bf: dict[tuple[str, str], list[tuple[str, float]]] = {}
+        for v in vehicles:
+            mm_key = (v["make"].lower(), v["model"].lower())
+            bf_key = (v["body_type"].lower(), v["fuel_type"].lower())
+            _peer_by_mm.setdefault(mm_key, []).append((v["id"], float(v["price"])))
+            _peer_by_bf.setdefault(bf_key, []).append((v["id"], float(v["price"])))
+
         opportunities: list[dict[str, Any]] = []
         for vehicle in vehicles:
             age_days, unknown_age = self._days_since(vehicle["ingested_at"], now=now_dt)
             if unknown_age:
                 age_days, unknown_age = self._days_since(vehicle["updated_at"], now=now_dt)
 
-            peers_primary = [
-                candidate["price"]
-                for candidate in vehicles
-                if candidate["id"] != vehicle["id"]
-                and candidate["make"].lower() == vehicle["make"].lower()
-                and candidate["model"].lower() == vehicle["model"].lower()
-            ]
+            vid = vehicle["id"]
+            mm_key = (vehicle["make"].lower(), vehicle["model"].lower())
+            peers_primary = [p for pid, p in _peer_by_mm.get(mm_key, []) if pid != vid]
             if peers_primary:
                 peer_prices = peers_primary
                 peer_basis = "make_model"
             else:
-                peer_prices = [
-                    candidate["price"]
-                    for candidate in vehicles
-                    if candidate["id"] != vehicle["id"]
-                    and candidate["body_type"].lower() == vehicle["body_type"].lower()
-                    and candidate["fuel_type"].lower() == vehicle["fuel_type"].lower()
-                ]
+                bf_key = (vehicle["body_type"].lower(), vehicle["fuel_type"].lower())
+                peer_prices = [p for pid, p in _peer_by_bf.get(bf_key, []) if pid != vid]
                 peer_basis = "body_fuel"
 
             market_median = float(median(peer_prices)) if peer_prices else 0.0

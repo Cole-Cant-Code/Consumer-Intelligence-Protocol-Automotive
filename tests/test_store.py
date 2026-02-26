@@ -220,6 +220,31 @@ class TestWindowedSearch:
         assert len(second) == 2
         assert {v["id"] for v in first}.isdisjoint({v["id"] for v in second})
 
+    def test_search_page_with_count_normal(self, seeded_store: SqliteVehicleStore):
+        total, page = seeded_store.search_page_with_count(make="Toyota", limit=2, offset=0)
+        full = seeded_store.search(make="Toyota")
+        assert total == len(full)
+        assert len(page) == 2
+        assert all(v["make"] == "Toyota" for v in page)
+
+    def test_search_page_with_count_empty_result(self, seeded_store: SqliteVehicleStore):
+        total, page = seeded_store.search_page_with_count(make="NonExistentMake", limit=10)
+        assert total == 0
+        assert page == []
+
+    def test_search_page_with_count_offset_past_end(self, seeded_store: SqliteVehicleStore):
+        full = seeded_store.search(make="Toyota")
+        total, page = seeded_store.search_page_with_count(
+            make="Toyota", limit=10, offset=len(full) + 100,
+        )
+        assert total == len(full)
+        assert page == []
+
+    def test_search_page_with_count_zero_limit(self, seeded_store: SqliteVehicleStore):
+        total, page = seeded_store.search_page_with_count(make="Toyota", limit=0)
+        assert total == 0
+        assert page == []
+
 
 # ── Case insensitivity ─────────────────────────────────────────
 
