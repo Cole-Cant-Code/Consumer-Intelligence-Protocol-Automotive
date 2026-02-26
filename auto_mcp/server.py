@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -100,19 +101,23 @@ _SCAFFOLD_DIR = str(Path(__file__).parent / "scaffolds")
 _pool = ProviderPool(AUTO_DOMAIN_CONFIG, _SCAFFOLD_DIR)
 
 _escalation_store_ref: object | None = None
+_escalation_store_lock = threading.Lock()
 _scaffold_registry_ref: ScaffoldRegistry | None = None
+_scaffold_registry_lock = threading.Lock()
 
 
 def _get_escalation_store():
     """Lazy accessor — enables escalations on the SQLite store on first call."""
     global _escalation_store_ref  # noqa: PLW0603
     if _escalation_store_ref is None:
-        from auto_mcp.data.inventory import get_store
-        from auto_mcp.data.store import SqliteVehicleStore
+        with _escalation_store_lock:
+            if _escalation_store_ref is None:
+                from auto_mcp.data.inventory import get_store
+                from auto_mcp.data.store import SqliteVehicleStore
 
-        store = get_store()
-        if isinstance(store, SqliteVehicleStore):
-            _escalation_store_ref = store.enable_escalations()
+                store = get_store()
+                if isinstance(store, SqliteVehicleStore):
+                    _escalation_store_ref = store.enable_escalations()
     return _escalation_store_ref
 
 
@@ -120,9 +125,11 @@ def _get_scaffold_registry() -> ScaffoldRegistry:
     """Lazy scaffold registry accessor for resources/prompts."""
     global _scaffold_registry_ref  # noqa: PLW0603
     if _scaffold_registry_ref is None:
-        reg = ScaffoldRegistry()
-        load_scaffold_directory(_SCAFFOLD_DIR, reg)
-        _scaffold_registry_ref = reg
+        with _scaffold_registry_lock:
+            if _scaffold_registry_ref is None:
+                reg = ScaffoldRegistry()
+                load_scaffold_directory(_SCAFFOLD_DIR, reg)
+                _scaffold_registry_ref = reg
     return _scaffold_registry_ref
 
 

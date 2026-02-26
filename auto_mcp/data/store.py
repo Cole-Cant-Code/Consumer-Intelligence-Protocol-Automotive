@@ -2073,10 +2073,6 @@ class SqliteVehicleStore:
         if sold_at_parsed is None:
             raise ValueError("sold_at must be a valid ISO-8601 datetime string")
 
-        vehicle = self.get(vehicle_id)
-        if not vehicle:
-            raise ValueError(f"Vehicle {vehicle_id} not found")
-
         if sold_price < 0:
             raise ValueError("sold_price must be greater than or equal to 0")
 
@@ -2086,67 +2082,86 @@ class SqliteVehicleStore:
         normalized_lead_id = lead_id.strip()
         normalized_salesperson = salesperson_id.strip()
         resolved_metadata = metadata if isinstance(metadata, dict) else {}
+        visibility_clause, visibility_params = self._active_inventory_clause(
+            include_sold=False
+        )
 
+        # Single lock acquisition for the entire operation (vehicle lookup + sale insert)
+        # to prevent TOCTOU races where another thread could archive/sell the vehicle
+        # between lookup and insert.
         with self._lock:
-            self._conn.execute(
-                """INSERT INTO sales (
-                    id, vehicle_id, lead_id, dealer_name, dealer_zip, sold_price, listed_price,
-                    source_channel, salesperson_id, sold_at, recorded_at, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    sale_id,
-                    vehicle_id,
-                    normalized_lead_id,
-                    vehicle.get("dealer_name", ""),
-                    vehicle.get("dealer_zip", ""),
-                    float(sold_price),
-                    float(vehicle.get("price", 0)),
-                    normalized_source,
-                    normalized_salesperson,
-                    sold_at_parsed.isoformat(),
-                    now_iso,
-                    json.dumps(resolved_metadata),
-                ),
-            )
+            row = self._conn.execute(
+                f"""SELECT {PUBLIC_COLUMNS} FROM vehicles
+                    WHERE id = ? AND {visibility_clause}""",
+                (vehicle_id, *visibility_params),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Vehicle {vehicle_id} not found")
+            vehicle = self._row_to_dict(row)
 
-            self._conn.execute(
-                "UPDATE vehicles SET availability_status = 'sold' WHERE id = ?",
-                (vehicle_id,),
-            )
-
-            if normalized_lead_id:
+            try:
                 self._conn.execute(
-                    """UPDATE lead_profiles
-                       SET status = 'won', last_activity_at = ?, last_vehicle_id = ?
-                       WHERE id = ?""",
-                    (now_iso, vehicle_id, normalized_lead_id),
+                    """INSERT INTO sales (
+                        id, vehicle_id, lead_id, dealer_name, dealer_zip, sold_price, listed_price,
+                        source_channel, salesperson_id, sold_at, recorded_at, metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        sale_id,
+                        vehicle_id,
+                        normalized_lead_id,
+                        vehicle.get("dealer_name", ""),
+                        vehicle.get("dealer_zip", ""),
+                        float(sold_price),
+                        float(vehicle.get("price", 0)),
+                        normalized_source,
+                        normalized_salesperson,
+                        sold_at_parsed.isoformat(),
+                        now_iso,
+                        json.dumps(resolved_metadata),
+                    ),
                 )
 
-            self._insert_lead_event(
-                event_id=f"lead-{uuid.uuid4().hex[:12]}",
-                vehicle=vehicle,
-                action="sale_closed",
-                user_query="Sale recorded",
-                created_at=now_iso,
-                lead_id=normalized_lead_id,
-                customer_id="",
-                session_id="",
-                customer_name="",
-                customer_contact="",
-                source_channel=normalized_source,
-                event_meta={"sale_id": sale_id, "sold_price": float(sold_price)},
-            )
-
-            if keep_vehicle_record is False:
-                # Keep row for lead-FK integrity while hiding it from active inventory.
                 self._conn.execute(
-                    """UPDATE vehicles
-                       SET availability_status = ?, expires_at = ''
-                       WHERE id = ?""",
-                    (ARCHIVED_SOLD_STATUS, vehicle_id),
+                    "UPDATE vehicles SET availability_status = 'sold' WHERE id = ?",
+                    (vehicle_id,),
                 )
 
-            self._conn.commit()
+                if normalized_lead_id:
+                    self._conn.execute(
+                        """UPDATE lead_profiles
+                           SET status = 'won', last_activity_at = ?, last_vehicle_id = ?
+                           WHERE id = ?""",
+                        (now_iso, vehicle_id, normalized_lead_id),
+                    )
+
+                self._insert_lead_event(
+                    event_id=f"lead-{uuid.uuid4().hex[:12]}",
+                    vehicle=vehicle,
+                    action="sale_closed",
+                    user_query="Sale recorded",
+                    created_at=now_iso,
+                    lead_id=normalized_lead_id,
+                    customer_id="",
+                    session_id="",
+                    customer_name="",
+                    customer_contact="",
+                    source_channel=normalized_source,
+                    event_meta={"sale_id": sale_id, "sold_price": float(sold_price)},
+                )
+
+                if keep_vehicle_record is False:
+                    # Keep row for lead-FK integrity while hiding it from active inventory.
+                    self._conn.execute(
+                        """UPDATE vehicles
+                           SET availability_status = ?, expires_at = ''
+                           WHERE id = ?""",
+                        (ARCHIVED_SOLD_STATUS, vehicle_id),
+                    )
+
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
         return {
             "sale_id": sale_id,
