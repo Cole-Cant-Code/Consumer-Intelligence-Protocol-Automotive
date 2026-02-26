@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "auto-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "AutoCIP — Vehicle shopping assistant MCP server built on CIP"
 requires-python = ">=3.11"
 license = "BUSL-1.1"
 dependencies = [
-    "cip-protocol[full] @ git+https://github.com/Cole-Cant-Code/CIP-Customer-Intelligence-Protocol.git@v0.3.0",
+    "cip-protocol[full] @ git+https://github.com/Cole-Cant-Code/CIP-Customer-Intelligence-Protocol.git@v0.3.1",
     "mcp[cli]>=1.26.0",
     "aiohttp>=3.9.0",
 ]
