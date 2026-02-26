@@ -2,10 +2,16 @@
 
 Scaffold-driven MCP server that turns car conversations into real outcomes — for shoppers and dealers
 
-[![License: BSL 1.1](https://img.shields.io/badge/license-BSL--1.1-blue.svg)](LICENSE)
+[![License: BUSL 1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blueviolet.svg)](https://modelcontextprotocol.io)
 [![Tests: 415](https://img.shields.io/badge/tests-415-brightgreen.svg)](tests/)
+
+## License In 30 Seconds
+
+AutoCIP is source-available under Business Source License 1.1 (`BUSL-1.1`): you can read, modify, and use it internally, but operating a competing commercial vehicle marketplace service requires a commercial license until each version's Change Date (four years after first public release), after which that version converts to Apache-2.0. See [LICENSE](LICENSE) and [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md).
+
+GitHub may show this repository as "Other/NOASSERTION" instead of `BUSL-1.1`; this is expected for BUSL text with project-specific Additional Use Grant language. The authoritative terms are in [LICENSE](LICENSE).
 
 ```
 You:     "Compare the Camry and Accord, then show me financing at 48 vs 72 months with $5k down."
