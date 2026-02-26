@@ -26,7 +26,7 @@ def registry() -> ScaffoldRegistry:
 class TestScaffoldValidation:
     def test_all_scaffolds_valid(self):
         count, errors = validate_scaffold_directory(SCAFFOLD_DIR)
-        assert count == 32
+        assert count == 33
         assert len(errors) == 0
 
     def test_all_ids_unique(self, registry: ScaffoldRegistry):
