@@ -6,10 +6,11 @@ Scaffold-driven MCP server that turns car conversations into real outcomes — f
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-blueviolet.svg)](https://modelcontextprotocol.io)
 [![Tests: 415](https://img.shields.io/badge/tests-415-brightgreen.svg)](tests/)
+[![Free for Startups & Internal Use](https://img.shields.io/badge/free-startups%20%26%20internal%20use-success.svg)](COMMERCIAL_LICENSE.md)
 
 ## License In 30 Seconds
 
-AutoCIP is source-available under Business Source License 1.1 (`BUSL-1.1`): you can read, modify, and use it internally, but operating a competing commercial vehicle marketplace service requires a commercial license until each version's Change Date (four years after first public release), after which that version converts to Apache-2.0. See [LICENSE](LICENSE) and [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md).
+AutoCIP is source-available under Business Source License 1.1 (`BUSL-1.1`): you can read, modify, and use it internally, and non-competing safe-harbor production use is allowed. Operating a competing commercial vehicle marketplace service requires a commercial license until each version's Change Date (two years after first public release), after which that version converts to Apache-2.0. See [LICENSE](LICENSE) and [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md).
 
 GitHub may show this repository as "Other/NOASSERTION" instead of `BUSL-1.1`; this is expected for BUSL text with project-specific Additional Use Grant language. The authoritative terms are in [LICENSE](LICENSE).
 
@@ -675,7 +676,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Open an issue first for anything beyond 
 
 ## License
 
-Business Source License 1.1 — converts to Apache 2.0 after four years.
+Business Source License 1.1 — converts to Apache 2.0 after two years.
+
+Each version's BUSL conversion clock is tracked from the date of its tagged release.
 
 [LICENSE](LICENSE) · [LICENSE-APACHE](LICENSE-APACHE) · [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) · [TRADEMARKS.md](TRADEMARKS.md)
 

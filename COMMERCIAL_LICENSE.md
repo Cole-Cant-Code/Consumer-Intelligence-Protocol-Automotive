@@ -10,6 +10,19 @@ placement, sponsorship, or lead-generation services.
 
 ## When You Need A Commercial License
 
+### Safe Harbors (Free to Use in Production)
+
+The following are examples of production use cases that are generally permitted
+under the default license and do not require a separate commercial agreement:
+
+1. Internal use by a single dealership group to assist its W2 employees.
+2. Building a generic personal finance app that includes a single auto-loan
+   or vehicle affordability calculator.
+3. Academic, nonprofit, or journalistic research into automotive market trends.
+
+These examples are illustrative, not exhaustive. If your use case is close to a
+competing commercial vehicle marketplace service, request written confirmation.
+
 You likely need a commercial license if you plan to:
 
 1. Offer AutoCIP-powered dealer placement or sponsored ranking to third parties.

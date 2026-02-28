@@ -16,6 +16,12 @@ uv run ruff check .
 uv run pytest -q
 ```
 
+## Release Discipline (BUSL Change Date)
+
+AutoCIP's BUSL conversion window is tracked per released version. Maintainers
+should publish a versioned Git tag/release for licensing changes so the
+two-year Change Date timeline is unambiguous for that version.
+
 ## Contribution Licensing / CLA
 
 By submitting a pull request, patch, or other contribution, you represent that:
